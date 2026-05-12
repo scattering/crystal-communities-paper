@@ -1,0 +1,70 @@
+cff-version: 1.2.0
+title: >-
+  crystal-communities-paper: companion repository for "Computational
+  materials proposals depart from the structural memory of
+  experimental discovery"
+message: >-
+  If you use this software or the derived data, please cite the
+  manuscript (DOI to be assigned at publication) and this repository.
+type: software
+authors:
+  - family-names: Nguyen
+    given-names: Dan
+    affiliation: University of California, Berkeley
+  - family-names: Cao
+    given-names: Karen
+    affiliation: California Institute of Technology
+  - family-names: Chu
+    given-names: Brian
+    affiliation: University of California, Berkeley
+  - family-names: Lemoff
+    given-names: Nick
+    affiliation: University of California, Berkeley
+  - family-names: Coomans
+    given-names: Will
+    affiliation: University of California, Berkeley
+  - family-names: Kienzle
+    given-names: Paul
+    affiliation: >-
+      NIST Center for Neutron Research, National Institute of
+      Standards and Technology
+  - family-names: Ratcliff II
+    given-names: William
+    affiliation: >-
+      NIST Center for Neutron Research, National Institute of
+      Standards and Technology; Department of Materials Science and
+      Engineering, University of Maryland; Department of Physics,
+      University of Maryland
+    email: william.ratcliff@nist.gov
+repository-code: 'https://github.com/scattering/crystal-communities-paper'
+license: MIT
+keywords:
+  - inorganic crystal structure database
+  - materials informatics
+  - structural similarity
+  - synthesizability prior
+  - generative AI materials discovery
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Nguyen
+      given-names: Dan
+    - family-names: Cao
+      given-names: Karen
+    - family-names: Chu
+      given-names: Brian
+    - family-names: Lemoff
+      given-names: Nick
+    - family-names: Coomans
+      given-names: Will
+    - family-names: Kienzle
+      given-names: Paul
+    - family-names: Ratcliff II
+      given-names: William
+  title: >-
+    Computational materials proposals depart from the structural
+    memory of experimental discovery
+  year: 2026
+  notes: >-
+    Submitted manuscript. Update with journal, volume, and DOI when
+    accepted.
