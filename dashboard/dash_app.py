@@ -19,9 +19,25 @@ from sklearn.preprocessing import StandardScaler
 
 
 APP_ROOT = Path(__file__).resolve().parent
-FIG_ROOT = APP_ROOT.parent / "figures" / "icsd_densification"
-REPO_ROOT = APP_ROOT.parent.parent
-SCRIPTS_ROOT = REPO_ROOT / "scripts"
+# Locate sibling scripts/ directory. Works in two layouts:
+#   <repo>/dashboard/dash_app.py            (companion repo: crystal-communities-paper)
+#   <repo>/resources/web_demo/dash_app.py   (working repo: crystal-communities)
+SCRIPTS_ROOT = None
+for candidate in (APP_ROOT.parent / "scripts", APP_ROOT.parent.parent / "scripts"):
+    if (candidate / "icsd_densify_worker.py").exists():
+        SCRIPTS_ROOT = candidate
+        REPO_ROOT = candidate.parent
+        break
+if SCRIPTS_ROOT is None:
+    raise RuntimeError(
+        "dash_app.py: could not locate sibling scripts/ directory containing "
+        "icsd_densify_worker.py."
+    )
+# Figures directory: companion repo uses figures/ at top level; working repo
+# uses resources/figures/icsd_densification/.
+FIG_ROOT = REPO_ROOT / "figures"
+if not FIG_ROOT.exists() or not any(FIG_ROOT.glob("*.png")):
+    FIG_ROOT = REPO_ROOT / "resources" / "figures" / "icsd_densification"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.append(str(SCRIPTS_ROOT))
 
