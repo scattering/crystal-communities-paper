@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+.pytest_cache/
+.idea/
+.vscode/
+
+# data lives on Zenodo; if someone symlinks/clones it locally for re-runs,
+# keep it out of the companion repo
+notes/
+resources/
