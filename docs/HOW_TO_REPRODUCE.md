@@ -56,6 +56,10 @@ Each `scripts/make_fig_*.py` reads one or two JSON/CSV files from the
 Zenodo bundle and writes a single PNG. The PNGs in `figures/` are the
 exact submission outputs.
 
+To sanity-check a fresh checkout before downloading data, run
+`python scripts/smoke_reproduce.py`. This only compiles scripts and
+renders the data-free pipeline schematic.
+
 ### Main-text figures
 
 | Figure | Producer | Reads | Output |
