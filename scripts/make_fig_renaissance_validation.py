@@ -14,6 +14,7 @@ Inputs are in notes/ and require no TACC access.
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 from collections import Counter, defaultdict
@@ -52,9 +53,29 @@ EVENT_IDS = {
 }
 
 
-def load_records():
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--community-assignments",
+        default=str(COMMUNITY_ASSIGN),
+        help="Path to community_assignments_labels3.csv.",
+    )
+    parser.add_argument(
+        "--survey-json",
+        default=str(SURVEY_JSON),
+        help="Path to renaissance_survey_top.json.",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(OUT_FIG),
+        help="Output PNG path.",
+    )
+    return parser.parse_args()
+
+
+def load_records(path: Path):
     out = []
-    with COMMUNITY_ASSIGN.open(newline="", encoding="utf-8") as f:
+    with path.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             try:
                 out.append((int(row["icsd_id"]), int(row["year"]), int(row["community"])))
@@ -68,9 +89,14 @@ def per_year(records, comm_id):
 
 
 def main() -> int:
+    args = parse_args()
+    community_assign = Path(args.community_assignments)
+    survey_json = Path(args.survey_json)
+    out_fig = Path(args.output)
+
     print("loading data...", flush=True)
-    records = load_records()
-    survey = json.loads(SURVEY_JSON.read_text())
+    records = load_records(community_assign)
+    survey = json.loads(survey_json.read_text())
     top = survey["top"]
     print(f"  {len(records)} records, {len(top)} top survey communities", flush=True)
 
@@ -168,10 +194,10 @@ def main() -> int:
     fig.suptitle("Communities track field-defining scientific events",
                  fontsize=13, fontweight="bold", y=0.97)
 
-    OUT_FIG.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT_FIG, dpi=170, bbox_inches="tight")
+    out_fig.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_fig, dpi=170, bbox_inches="tight")
     plt.close(fig)
-    print(f"wrote {OUT_FIG}")
+    print(f"wrote {out_fig}")
     return 0
 
 

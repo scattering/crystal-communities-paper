@@ -13,6 +13,7 @@ explicit in the caption.
 """
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -44,8 +45,24 @@ SOURCE_COLORS = {
 }
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--summary",
+        default=str(REPO / "notes" / "formula_synth_prior_summary.json"),
+        help="Path to formula_synth_prior_summary.json.",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(REPO / "resources" / "figures" / "icsd_densification" / "synth_prior_quadrant.png"),
+        help="Output PNG path.",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
-    summary = json.loads((REPO / "notes" / "formula_synth_prior_summary.json").read_text())
+    args = parse_args()
+    summary = json.loads(Path(args.summary).read_text())
     sources = summary["sources"]
 
     # Quadrant grid layout: rows are in-basin / frontier; cols are formula
@@ -172,7 +189,7 @@ def main() -> int:
         fontsize=12, fontweight="bold", pad=14,
     )
 
-    out = REPO / "resources" / "figures" / "icsd_densification" / "synth_prior_quadrant.png"
+    out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(out, dpi=180, bbox_inches="tight")
