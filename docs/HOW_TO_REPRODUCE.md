@@ -29,6 +29,12 @@ mkdir -p notes
 # zenodo_get <DOI> -o notes/zenodo/   # ~330 MB
 ```
 
+This repository intentionally keeps the Git checkout small: it includes
+code and submitted figures, while the derived CSV/JSON/NPY artifacts
+needed to regenerate most figures live in the Zenodo bundle. Raw ICSD
+CIFs are not redistributed; full re-featurization from CIFs requires an
+ICSD license and the TACC-scale workflow documented in `scripts/tacc/`.
+
 After download, the layout should be:
 
 ```

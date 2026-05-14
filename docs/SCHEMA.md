@@ -108,6 +108,13 @@ Per-community 2D coordinates for the figure renderings.
 
 ## `external_frontier_runs/<source>/<source>_frontier_records.csv`
 
+Threshold note: final manuscript interpretation uses per-community
+95th-percentile centroid-distance thresholds. If a downstream analysis
+has `per_community_thresholds_fullmap_p95.json`, it should recompute
+frontier labels from `assigned_community` and
+`nearest_centroid_distance` rather than assuming a legacy `outlier_like`
+column necessarily used the final threshold convention.
+
 The per-CIF projection of one external structure source onto the
 frozen ICSD reference frame. **Five files**, one per source. Each
 producer is `scripts/analyze_<source>_frontier.py` (or the generic
