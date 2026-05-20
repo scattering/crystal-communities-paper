@@ -7,15 +7,18 @@ message: >-
   If you use this software or the derived data, please cite the
   manuscript (DOI to be assigned at publication) and this repository.
 type: software
+  # Nguyen and Cao are joint first authors (contributed equally).
 authors:
   - family-names: Nguyen
     given-names: Dan
     affiliation: University of California, Berkeley
     orcid: 'https://orcid.org/0009-0005-3128-6915'
+    note: 'Joint first author (contributed equally with Cao)'
   - family-names: Cao
     given-names: Karen
     affiliation: California Institute of Technology
     orcid: 'https://orcid.org/0009-0006-8636-5941'
+    note: 'Joint first author (contributed equally with Nguyen)'
   - family-names: Chu
     given-names: Brian
     affiliation: University of California, Berkeley
@@ -57,13 +60,16 @@ keywords:
   - generative AI materials discovery
 preferred-citation:
   type: article
+  # Nguyen and Cao are joint first authors (contributed equally).
   authors:
     - family-names: Nguyen
       given-names: Dan
       orcid: 'https://orcid.org/0009-0005-3128-6915'
+      note: 'Joint first author (contributed equally with Cao)'
     - family-names: Cao
       given-names: Karen
       orcid: 'https://orcid.org/0009-0006-8636-5941'
+      note: 'Joint first author (contributed equally with Nguyen)'
     - family-names: Chu
       given-names: Brian
     - family-names: Lemoff
