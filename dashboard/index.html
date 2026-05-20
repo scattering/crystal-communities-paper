@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ICSD Structural History Demo</title>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --paper: #fffaf2;
+      --ink: #182028;
+      --muted: #5b6672;
+      --line: #d9cbb7;
+      --accent: #0f6d61;
+      --accent-2: #b9572f;
+      --shadow: 0 20px 50px rgba(24, 32, 40, 0.08);
+      --radius: 20px;
+      --max: 1280px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(15, 109, 97, 0.10), transparent 32%),
+        radial-gradient(circle at top right, rgba(185, 87, 47, 0.10), transparent 28%),
+        linear-gradient(180deg, #f7f2ea 0%, #f1ebe2 100%);
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .page {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.3fr 0.9fr;
+      gap: 24px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+
+    .panel {
+      background: rgba(255, 250, 242, 0.86);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(217, 203, 183, 0.9);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-copy {
+      padding: 32px;
+      min-height: 360px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 14px;
+      padding: 6px 10px;
+      border: 1px solid rgba(15, 109, 97, 0.28);
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-weight: 600;
+      line-height: 1.05;
+    }
+
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 4.3rem);
+      margin-bottom: 16px;
+    }
+
+    .lead {
+      margin: 0 0 20px;
+      max-width: 58ch;
+      font-size: 1.08rem;
+      line-height: 1.65;
+      color: var(--muted);
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 999px;
+      text-decoration: none;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-size: 0.95rem;
+      transition: transform 140ms ease, border-color 140ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent);
+    }
+
+    .button.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .summary {
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(217, 203, 183, 0.9);
+    }
+
+    .metric .value {
+      font-size: 1.7rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .metric .label {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .section {
+      margin-top: 22px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .section-header p {
+      margin: 6px 0 0;
+      max-width: 64ch;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .story-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .story-card {
+      padding: 22px;
+    }
+
+    .story-card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 10px;
+    }
+
+    .story-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .figure-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .figure-card {
+      overflow: hidden;
+    }
+
+    .figure-card img {
+      display: block;
+      width: 100%;
+      height: 280px;
+      object-fit: cover;
+      border-bottom: 1px solid rgba(217, 203, 183, 0.9);
+    }
+
+    .figure-copy {
+      padding: 18px 20px 20px;
+    }
+
+    .figure-copy h3 {
+      margin-bottom: 8px;
+      font-size: 1.16rem;
+    }
+
+    .figure-copy p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .figure-copy .mini-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 0.94rem;
+    }
+
+    .viewer-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .viewer-card {
+      padding: 20px;
+    }
+
+    .viewer-card h3 {
+      margin-bottom: 10px;
+      font-size: 1.1rem;
+    }
+
+    .viewer-card p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .viewer-card ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .roadmap {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+    }
+
+    .roadmap-card {
+      padding: 24px;
+    }
+
+    .roadmap-card ol,
+    .roadmap-card ul {
+      margin: 14px 0 0;
+      padding-left: 20px;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .note {
+      margin-top: 18px;
+      padding: 18px 20px;
+      border-left: 4px solid var(--accent-2);
+      background: rgba(185, 87, 47, 0.07);
+      border-radius: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    footer {
+      margin-top: 28px;
+      padding-top: 22px;
+      border-top: 1px solid rgba(217, 203, 183, 0.9);
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 1000px) {
+      .hero,
+      .roadmap,
+      .story-grid,
+      .viewer-grid,
+      .figure-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        padding: 18px 14px 44px;
+      }
+
+      .hero-copy,
+      .summary,
+      .story-card,
+      .viewer-card,
+      .roadmap-card {
+        padding: 20px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .figure-card img {
+        height: 220px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="panel hero-copy">
+        <div>
+          <div class="eyebrow">ICSD Structural History</div>
+          <h1>Human discovery mostly densifies known crystal basins.</h1>
+          <p class="lead">
+            A visual hub for the manuscript's results: century-scale densification,
+            thermodynamic stepping-stone behavior, and the calibration of
+            GNoME and MatterGen against the historical human trajectory.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <a class="button primary" href="../figures/icsd_densification/icsd_graph_view_umap3d_1930s_2010s_labels4.html">Open 3D Viewer</a>
+          <a class="button" href="../figures/icsd_densification/icsd_graph_connectivity_view_labels4.html">Open Connectivity Viewer</a>
+          <a class="button" href="https://github.com/scattering/crystal-communities-paper">Code &amp; Data Repository</a>
+        </div>
+      </div>
+      <div class="panel summary">
+        <div>
+          <div class="eyebrow">Key Numbers</div>
+          <h2 style="font-size: 1.8rem; margin-top: 4px;">Dataset at a glance</h2>
+        </div>
+        <div class="summary-grid">
+          <div class="metric">
+            <div class="value">167,500</div>
+            <div class="label">ICSD entries featurized in the full production run.</div>
+          </div>
+          <div class="metric">
+            <div class="value">44.2</div>
+            <div class="label">Mean space groups absorbed by each of the ten largest continuous basins.</div>
+          </div>
+          <div class="metric">
+            <div class="value">82.9%</div>
+            <div class="label">New formulas that join existing structural communities instead of founding new ones.</div>
+          </div>
+          <div class="metric">
+            <div class="value">Humans &gt; MatterGen &gt; GNoME</div>
+            <div class="label">Stable held-out frontier ordering across the historical cutoffs.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <div>
+          <h2>Overview</h2>
+          <p>Three threads: densification as the historical phenomenon, stepping-stone behavior as the mechanism, and generative-model calibration as the application.</p>
+        </div>
+      </div>
+      <div class="story-grid">
+        <article class="panel story-card">
+          <h3>1. Structural Densification</h3>
+          <p>The share of structures that open new communities collapses through time, while assignment to preexisting basins comes to dominate the ICSD record.</p>
+        </article>
+        <article class="panel story-card">
+          <h3>2. Path Dependence</h3>
+          <p>TRI-aligned analysis shows that new formulas overwhelmingly enter old neighborhoods first. Discovery is guided by historically accessible structural stepping stones.</p>
+        </article>
+        <article class="panel story-card">
+          <h3>3. Generative AI Calibration</h3>
+          <p>Held-out historical maps separate ordinary human continuation from public AI outputs, with MatterGen closer to the human trajectory than GNoME.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <div>
+          <h2>Core Figures</h2>
+          <p>These are the main static assets that currently support the manuscript and supporting information.</p>
+        </div>
+      </div>
+      <div class="figure-grid">
+        <article class="panel figure-card">
+          <img src="../figures/icsd_densification/graph_time_ratios.png" alt="Graph time ratios" />
+          <div class="figure-copy">
+            <h3>Century-Scale Community Birth Collapse</h3>
+            <p>The clearest historical result: new community birth declines while occupancy of existing basins rises through the ICSD record.</p>
+          </div>
+        </article>
+        <article class="panel figure-card">
+          <img src="../figures/icsd_densification/prototype_collapse_space_groups.png" alt="Prototype collapse" />
+          <div class="figure-copy">
+            <h3>Prototype Collapse</h3>
+            <p>Continuous structural basins absorb many nominally separate space groups, which is why the method is more robust than discrete prototype counting.</p>
+          </div>
+        </article>
+        <article class="panel figure-card">
+          <img src="../figures/icsd_densification/tri_stepping_stone_counts.png" alt="TRI stepping stone counts" />
+          <div class="figure-copy">
+            <h3>Stepping-Stone Mechanism</h3>
+            <p>TRI-linked formulas overwhelmingly land inside already-established structural neighborhoods rather than founding new ones.</p>
+          </div>
+        </article>
+        <article class="panel figure-card">
+          <img src="../figures/icsd_densification/gnome_frontier_pca.png" alt="GNoME frontier PCA" />
+          <div class="figure-copy">
+            <h3>AI vs Human Structural Continuation</h3>
+            <p>Generative outputs are more frontier-like than ordinary held-out ICSD continuation, with a stable ordering of humans, MatterGen, then GNoME.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <div>
+          <h2>Live Viewers</h2>
+          <p>Interactive HTML viewers for inspecting the basin geometry and the cleaned community graph.</p>
+        </div>
+      </div>
+      <div class="viewer-grid">
+        <article class="panel viewer-card">
+          <h3>3D Structural Map</h3>
+          <p>The strongest current way to inspect the basin geometry across decades.</p>
+          <ul>
+            <li><a href="../figures/icsd_densification/icsd_graph_view_umap3d_1930s_2010s_labels4.html">Open 3D UMAP viewer</a></li>
+            <li><a href="../figures/icsd_densification/icsd_graph_growth_umap3d_1930s_2010s_labels4.gif">Open growth animation</a></li>
+          </ul>
+        </article>
+        <article class="panel viewer-card">
+          <h3>Connectivity View</h3>
+          <p>Useful for understanding the cleaned graph structure and labeled basin relationships.</p>
+          <ul>
+            <li><a href="../figures/icsd_densification/icsd_graph_connectivity_view_labels4.html">Open connectivity viewer</a></li>
+            <li><a href="../figures/icsd_densification/icsd_graph_view.html">Open original graph viewer</a></li>
+          </ul>
+        </article>
+        <article class="panel viewer-card">
+          <h3>Supporting Comparisons</h3>
+          <p>The current supplement-backed comparisons that sharpen the main story.</p>
+          <ul>
+            <li><a href="../figures/icsd_densification/formula_graph_tri_comparison.png">TRI formula-graph comparison</a></li>
+            <li><a href="../figures/icsd_densification/structural_accessibility_boxplot.png">Accessibility score summary</a></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <footer>
+      Companion to <em>Computational materials proposals depart from the structural
+      memory of experimental discovery</em>. Code and data:
+      <a href="https://github.com/scattering/crystal-communities-paper">github.com/scattering/crystal-communities-paper</a>.
+    </footer>
+  </main>
+</body>
+</html>

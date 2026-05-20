@@ -1,0 +1,84 @@
+cff-version: 1.2.0
+title: >-
+  crystal-communities-paper: companion repository for "Computed
+  materials proposals depart from the structural memory of
+  experimental discovery"
+message: >-
+  If you use this software or the derived data, please cite the
+  manuscript (DOI to be assigned at publication) and this repository.
+type: software
+authors:
+  - family-names: Nguyen
+    given-names: Dan
+    affiliation: University of California, Berkeley
+    orcid: 'https://orcid.org/0009-0005-3128-6915'
+  - family-names: Cao
+    given-names: Karen
+    affiliation: California Institute of Technology
+    orcid: 'https://orcid.org/0009-0006-8636-5941'
+  - family-names: Chu
+    given-names: Brian
+    affiliation: University of California, Berkeley
+  - family-names: Lemoff
+    given-names: Nick
+    affiliation: University of California, Berkeley
+    orcid: 'https://orcid.org/0009-0001-3216-0979'
+  - family-names: Kienzle
+    given-names: Paul
+    affiliation: >-
+      NIST Center for Neutron Research, National Institute of
+      Standards and Technology
+    orcid: 'https://orcid.org/0000-0002-7893-0318'
+  - family-names: Ratcliff II
+    given-names: William
+    affiliation: >-
+      NIST Center for Neutron Research, National Institute of
+      Standards and Technology; Department of Materials Science and
+      Engineering, University of Maryland; Department of Physics,
+      University of Maryland
+    email: william.ratcliff@nist.gov
+    orcid: 'https://orcid.org/0000-0001-8956-3851'
+repository-code: 'https://github.com/scattering/crystal-communities-paper'
+license: MIT
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.20046303
+    description: >-
+      Zenodo archive of derived analysis artifacts (v1):
+      featurized embeddings, community-assignment CSVs, per-source
+      frontier records, renaissance-survey outputs, and the SI §S9
+      graphlet-pipeline temporal-replay summary. Activates publicly
+      at paper acceptance.
+keywords:
+  - inorganic crystal structure database
+  - materials informatics
+  - structural similarity
+  - synthesizability prior
+  - generative AI materials discovery
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Nguyen
+      given-names: Dan
+      orcid: 'https://orcid.org/0009-0005-3128-6915'
+    - family-names: Cao
+      given-names: Karen
+      orcid: 'https://orcid.org/0009-0006-8636-5941'
+    - family-names: Chu
+      given-names: Brian
+    - family-names: Lemoff
+      given-names: Nick
+      orcid: 'https://orcid.org/0009-0001-3216-0979'
+    - family-names: Kienzle
+      given-names: Paul
+      orcid: 'https://orcid.org/0000-0002-7893-0318'
+    - family-names: Ratcliff II
+      given-names: William
+      orcid: 'https://orcid.org/0000-0001-8956-3851'
+  title: >-
+    Computed materials proposals depart from the structural
+    memory of experimental discovery
+  year: 2026
+  notes: >-
+    Submitted manuscript. Update with journal, volume, and DOI when
+    accepted.
