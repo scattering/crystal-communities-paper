@@ -19,6 +19,9 @@ authors:
     affiliation: California Institute of Technology
     orcid: 'https://orcid.org/0009-0006-8636-5941'
     note: 'Joint first author (contributed equally with Nguyen)'
+  - family-names: Chu
+    given-names: Brian
+    affiliation: University of California, Berkeley
   - family-names: Lemoff
     given-names: Nick
     affiliation: University of California, Berkeley
@@ -67,6 +70,8 @@ preferred-citation:
       given-names: Karen
       orcid: 'https://orcid.org/0009-0006-8636-5941'
       note: 'Joint first author (contributed equally with Nguyen)'
+    - family-names: Chu
+      given-names: Brian
     - family-names: Lemoff
       given-names: Nick
       orcid: 'https://orcid.org/0009-0001-3216-0979'
