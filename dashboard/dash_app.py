@@ -650,6 +650,13 @@ def score_structure(structure: Structure) -> dict[str, Any]:
         "distance": dist,
         "threshold": threshold,
         "frontier": bool(dist > threshold),
+        "structural_match_tier": (
+            "VERY HIGH" if dist <= 0.5
+            else "HIGH" if dist <= threshold
+            else "NEAR" if dist <= 2.0 * threshold
+            else "DISTANT"
+        ),
+        "small_community_caveat": bool(int(meta["size"]) < 20 or threshold < 0.1),
         "accessibility": score,
         "community_size": int(meta["size"]),
         "community_birth_year": int(meta["birth_year"]),
@@ -700,17 +707,65 @@ def summary_panel(result: dict[str, Any]) -> html.Div:
                         },
                     ),
                     html.Div(
-                        frontier_label,
-                        style={
-                            "display": "inline-block",
-                            "marginTop": "10px",
-                            "padding": "6px 10px",
-                            "borderRadius": "999px",
-                            "background": "rgba(255,255,255,0.82)",
-                            "border": f"1px solid {frontier_color}",
-                            "color": frontier_color,
-                            "fontWeight": "700",
-                        },
+                        [
+                            html.Span(
+                                frontier_label,
+                                style={
+                                    "display": "inline-block",
+                                    "padding": "6px 10px",
+                                    "marginRight": "8px",
+                                    "borderRadius": "999px",
+                                    "background": "rgba(255,255,255,0.82)",
+                                    "border": f"1px solid {frontier_color}",
+                                    "color": frontier_color,
+                                    "fontWeight": "700",
+                                },
+                            ),
+                            html.Span(
+                                f"Structural match: {result['structural_match_tier']}",
+                                title=(
+                                    "VERY HIGH: distance ≤ 0.5 in absolute terms — near-textbook structural identity. "
+                                    "HIGH: within the community's 95th-percentile threshold (strict in-basin per the paper's definition). "
+                                    "NEAR: just outside the basin envelope (up to 2× threshold). "
+                                    "DISTANT: meaningfully outside."
+                                ),
+                                style={
+                                    "display": "inline-block",
+                                    "padding": "6px 10px",
+                                    "borderRadius": "999px",
+                                    "background": "rgba(255,255,255,0.82)",
+                                    "border": "1px solid #355ea0",
+                                    "color": "#355ea0",
+                                    "fontWeight": "700",
+                                    "cursor": "help",
+                                },
+                            ),
+                        ],
+                        style={"marginTop": "10px"},
+                    ),
+                    (
+                        html.Div(
+                            (
+                                f"⚠ Small-community caveat: nearest community has only "
+                                f"{result['community_size']} members, so its 95th-percentile threshold has "
+                                f"collapsed to {result['threshold']:.3f} as a statistical artifact of the small "
+                                f"sample. The distance of {result['distance']:.3f} is small in absolute terms — "
+                                f"your structure is essentially identical to the existing members of this "
+                                f"community. Treat as near-textbook structural identity even if the strict "
+                                f"95th-percentile in-basin classification falls just outside."
+                            ),
+                            style={
+                                "marginTop": "10px",
+                                "padding": "8px 12px",
+                                "background": "rgba(255, 245, 220, 0.7)",
+                                "border": "1px solid #c89132",
+                                "borderRadius": "8px",
+                                "color": "#5b3a00",
+                                "fontSize": "0.82rem",
+                                "lineHeight": "1.45",
+                            },
+                        )
+                        if result.get("small_community_caveat") else None
                     ),
                 ],
                 style={"marginBottom": "14px"},

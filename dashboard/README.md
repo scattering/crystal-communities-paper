@@ -15,7 +15,9 @@ Two views:
   nearest structural basin, centroid distance, the community's
   95th-percentile threshold, the in-basin vs frontier classification,
   the structural-accessibility score 𝒜ᵢ, and a 2-D placement on a
-  sampled historical background.
+  sampled historical background. The result also includes a
+  `structural_match_tier` (categorical) and `small_community_caveat`
+  (boolean) — see [Interpreting the score result](#interpreting-the-score-result) below.
 
 `index.html` is a static landing page (figure hub) that can be served
 alongside or independently of the Dash app.
@@ -70,6 +72,52 @@ which variables are missing.
 
 The exact bundle filenames are documented in
 [`../docs/SCHEMA.md`](../docs/SCHEMA.md).
+
+## Interpreting the score result
+
+`score_structure(...)` returns a dict with the following fields. Two of
+them — `structural_match_tier` and `small_community_caveat` — are
+purely reporting-layer additions; the manuscript's in-basin definition
+(95th-percentile threshold on within-community centroid distances) is
+unchanged.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `community` | int | Nearest community id (Louvain partition, `labels3` pass). |
+| `community_label` | str | Resolved family name (canonical → inferred → prototype → fallback). |
+| `community_size` | int | Number of training-set members in the community. |
+| `distance` | float | Euclidean distance to the community centroid in the frozen PCA-32 space. |
+| `threshold` | float | The community's 95th-percentile in-basin threshold (paper definition). |
+| `frontier` | bool | `True` iff `distance > threshold` — the manuscript's "out of basin" criterion. **This is the paper-faithful classification.** |
+| `accessibility` | float | Structural-accessibility score 𝒜ᵢ (combines centroid distance with size + age weighting). |
+| `structural_match_tier` | str | Categorical, absolute-distance based: `VERY HIGH` if `distance ≤ 0.5`; `HIGH` if `distance ≤ threshold`; `NEAR` if `distance ≤ 2 × threshold`; `DISTANT` otherwise. |
+| `small_community_caveat` | bool | `True` iff `community_size < 20` or `threshold < 0.1`. Surfaces the small-community statistical-tightness edge case (see below). |
+| `xy` | array | Uploaded structure's 2-D placement on the sampled background. |
+| `centroid_xy` | array | The nearest community's centroid in the same 2-D space. |
+
+### Why the tier + caveat
+
+The manuscript's in-basin classification uses a 95th-percentile
+threshold per community. For very small communities (e.g., ≤20 members
+that are mostly near-duplicate refinements of one parent structure),
+the percentile collapses to near zero as a statistical artifact of the
+small sample. A new structurally near-identical upload can then end up
+formally `frontier=True` despite being centroid-close in absolute terms.
+
+The `structural_match_tier` provides a complementary categorical signal
+based on the absolute centroid distance (independent of percentile
+collapse). `small_community_caveat=True` flags the cases where the
+percentile threshold is statistically unreliable and the dashboard
+surfaces a "near-textbook structural identity" annotation in the result
+panel. The `frontier` boolean itself is unchanged from the paper's
+definition; the tier is additive UX, not a redefinition.
+
+The four tier cutoffs (0.5, τ, 2τ) are fixed defaults; the absolute
+0.5 floor is calibrated so that distances at or below it correspond to
+matched-structure near-identity at the level the embedding can resolve
+(empirically: replicate ICSD refinements of the same crystallographic
+entry cluster within < 0.1; structurally near-identical compounds
+within < 0.5; the same family within ~1–3; cross-family at ~5+).
 
 ## Resource notes
 
