@@ -131,10 +131,23 @@ without re-engineering.
 
 ## Interactive dashboard
 
-`dashboard/dash_app.py` is a Plotly Dash application for exploring
-the 167,500-entry ICSD embedding interactively: communities, members,
-year distributions, and overlays from the five external sources.
-Run locally:
+A live deployment of the dashboard is hosted at
+**<https://crystalcommunities.org/>** — open it in any browser to
+explore the structural community map (with curated family labels
+for cuprates, Fe-pnictides 1111 / 122 / 111, lacunar spinels,
+perovskites, Laves phases, and other manuscript-anchored families),
+and upload your own CIF for upload-and-score evaluation against the
+frozen ICSD reference frame. The CIF-scoring result includes the
+manuscript's in-basin classification plus two reporting-layer
+signals — a categorical structural-match tier (VERY HIGH / HIGH /
+NEAR / DISTANT, based on absolute centroid distance) and a
+small-community caveat annotation for cases where the
+95th-percentile threshold is statistically tight; see
+`dashboard/README.md` for the full result schema.
+
+`dashboard/dash_app.py` is the Plotly Dash application that powers
+the deployment. To run it locally instead of using the hosted
+version:
 
 ```bash
 cd dashboard
