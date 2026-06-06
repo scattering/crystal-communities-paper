@@ -1479,9 +1479,8 @@ def overview_layout() -> html.Div:
                             ),
                             figure_card(
                                 "Animated community growth",
-                                "Decade-by-decade densification of the ICSD structural map: faded historical points fix the eye while each frame highlights the new arrivals. Click the image to open the full interactive 3D viewer.",
+                                "Decade-by-decade densification of the ICSD structural map: faded historical points fix the eye while each frame highlights the new arrivals.",
                                 FIGURES["graph_growth_gif"],
-                                href="/viewers/icsd_graph_view.html",
                                 badge="Animation",
                             ),
                         ],
