@@ -131,4 +131,4 @@ You do NOT need:
 If you publish a comparison of your new source against the ICSD
 reference frame using these scripts, please cite the manuscript
 (DOI to be assigned at publication) and the Zenodo data deposit
-([10.5281/zenodo.20046303](https://doi.org/10.5281/zenodo.20046303)).
+([10.5281/zenodo.20046302](https://doi.org/10.5281/zenodo.20046302)).

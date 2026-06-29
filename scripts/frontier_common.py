@@ -74,7 +74,7 @@ def require_zenodo_file(path, what: str | None = None) -> Path:
         f"'Computed materials proposals depart from the structural\n"
         f"memory of experimental discovery.' Download the bundle before\n"
         f"running this script:\n\n"
-        f"    zenodo_get 10.5281/zenodo.20046303 -o notes/\n\n"
+        f"    zenodo_get 10.5281/zenodo.20046302  # concept DOI, always points to latest version -o notes/\n\n"
         f"See README.md → 'Zenodo data bundle required for figure\n"
         f"reproduction' and docs/SCHEMA.md for the full file inventory."
     )

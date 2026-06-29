@@ -19,6 +19,10 @@ authors:
     affiliation: California Institute of Technology
     orcid: 'https://orcid.org/0009-0006-8636-5941'
     note: 'Joint first author (contributed equally with Nguyen)'
+  - family-names: Chu
+    given-names: Brian
+    affiliation: University of California, Berkeley
+    orcid: 'https://orcid.org/0009-0002-0933-7315'
   - family-names: Lemoff
     given-names: Nick
     affiliation: University of California, Berkeley
@@ -42,7 +46,7 @@ repository-code: 'https://github.com/scattering/crystal-communities-paper'
 license: MIT
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.20046303
+    value: 10.5281/zenodo.20046302
     description: >-
       Zenodo archive of derived analysis artifacts (v1):
       featurized embeddings, community-assignment CSVs, per-source
@@ -67,6 +71,9 @@ preferred-citation:
       given-names: Karen
       orcid: 'https://orcid.org/0009-0006-8636-5941'
       note: 'Joint first author (contributed equally with Nguyen)'
+    - family-names: Chu
+      given-names: Brian
+      orcid: 'https://orcid.org/0009-0002-0933-7315'
     - family-names: Lemoff
       given-names: Nick
       orcid: 'https://orcid.org/0009-0001-3216-0979'

@@ -23,8 +23,8 @@ Zenodo bundle** (~330 MB). Download it before running anything beyond
 the smoke test:
 
 ```bash
-# Zenodo DOI 10.5281/zenodo.20046303 (activates publicly at paper acceptance)
-zenodo_get 10.5281/zenodo.20046303 -o notes/
+# Zenodo DOI 10.5281/zenodo.20046302 (activates publicly at paper acceptance)
+zenodo_get 10.5281/zenodo.20046302  # concept DOI, always points to latest version -o notes/
 ```
 
 ### What works on a fresh clone (no data download)
@@ -102,7 +102,7 @@ conda activate crystal-communities
 
 # Pull the Zenodo bundle (~330 MB) so its contents land under ./notes/
 # (e.g. ./notes/features.npy). The figure scripts default to notes/.
-zenodo_get 10.5281/zenodo.20046303 -o notes/
+zenodo_get 10.5281/zenodo.20046302  # concept DOI, always points to latest version -o notes/
 
 # Regenerate any main-text figure, e.g. the synthesizability-prior quadrant:
 python scripts/make_fig_synth_prior_quadrant.py
@@ -169,7 +169,7 @@ minutes from the Zenodo bundle.
 
 ## Data
 
-> Zenodo DOI: [10.5281/zenodo.20046303](https://doi.org/10.5281/zenodo.20046303) (activates publicly at paper acceptance).
+> Zenodo DOI: [10.5281/zenodo.20046302](https://doi.org/10.5281/zenodo.20046302) (activates publicly at paper acceptance).
 
 Bundle contents and column-level schema are documented in
 [`docs/SCHEMA.md`](docs/SCHEMA.md). **No raw ICSD CIFs are distributed
@@ -195,7 +195,7 @@ Until the manuscript appears in print, please cite as:
 > Ratcliff, W. *Computed materials proposals depart from the
 > structural memory of experimental discovery.* Submitted (2026).
 > Code: https://github.com/scattering/crystal-communities-paper.
-> Data: Zenodo DOI [10.5281/zenodo.20046303](https://doi.org/10.5281/zenodo.20046303).
+> Data: Zenodo DOI [10.5281/zenodo.20046302](https://doi.org/10.5281/zenodo.20046302).
 
 A `CITATION.cff` is provided for GitHub's "Cite this repository"
 button.

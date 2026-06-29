@@ -23,9 +23,9 @@ figures is reproducible across the same `environment.yml`.
 ## Step 2 — Download the Zenodo bundle
 
 ```bash
-# Zenodo DOI 10.5281/zenodo.20046303 (activates publicly at paper acceptance)
+# Zenodo DOI 10.5281/zenodo.20046302 (activates publicly at paper acceptance)
 mkdir -p notes
-zenodo_get 10.5281/zenodo.20046303 -o notes/   # ~330 MB
+zenodo_get 10.5281/zenodo.20046302  # concept DOI, always points to latest version -o notes/   # ~330 MB
 ```
 
 Unpack the bundle so its contents land **directly under `notes/`**
