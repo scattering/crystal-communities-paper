@@ -1,12 +1,14 @@
 # Reproduce the analyses and figures
 
 The current encoders and figures use the repaired CrystalWeave reference and
-its matched comparison maps. The revised numerical dataset is awaiting
-publication under reserved version-specific DOI
-[10.5281/zenodo.22700590](https://doi.org/10.5281/zenodo.22700590). The DOI will
-become available when the draft is published. The existing
-[Zenodo concept record](https://doi.org/10.5281/zenodo.20046302) resolves to older
-published data; downloading it does not supply the inputs needed below.
+its matched comparison maps. The required revised numerical dataset is
+published as version 3 at
+[10.5281/zenodo.22700590](https://doi.org/10.5281/zenodo.22700590), paired with
+source tag
+[`npj-revision-2026-09`](https://github.com/scattering/crystal-communities-paper/tree/npj-revision-2026-09)
+at commit `0f4ae1ae788800d93d1beacf2d8529e7bcca641b`. Use this dataset version;
+earlier releases contain different features and fitted states and do not
+supply the inputs needed below.
 
 ## Environment and data placement
 

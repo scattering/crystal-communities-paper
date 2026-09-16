@@ -47,9 +47,8 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.22700590
     description: >-
-      Reserved version-specific DOI for the revised derived analysis
-      artifacts and source snapshot. This Zenodo draft is not yet published;
-      the DOI will become available upon publication. Earlier published
+      Version-specific DOI for version 3 of the revised derived analysis
+      artifacts and source snapshot. Earlier published
       versions contain different features and do not reproduce this revision.
       Cite the specific dataset version used in an analysis.
 keywords:

@@ -33,14 +33,16 @@ anonymous stoichiometries and nearest-ICSD Element Mover's Distance (ElMD).
 ## Data and release status
 
 The current code uses the repaired feature version
-`crystal-features-v2-geometric-crystalnn`. **The corresponding revised data
-release is not yet published.** Its reserved version-specific DOI is
-[10.5281/zenodo.22700590](https://doi.org/10.5281/zenodo.22700590); it will become
-available when the draft is published. The
-[Zenodo concept record](https://doi.org/10.5281/zenodo.20046302) currently resolves
-to an earlier published dataset. Those older features, partitions and fitted
-states cannot reproduce this revision and must not be mixed with the current
-encoders.
+`crystal-features-v2-geometric-crystalnn`. **The revised dataset is published
+as version 3** at
+[10.5281/zenodo.22700590](https://doi.org/10.5281/zenodo.22700590), with the source
+snapshot tagged
+[`npj-revision-2026-09`](https://github.com/scattering/crystal-communities-paper/tree/npj-revision-2026-09)
+at commit `0f4ae1ae788800d93d1beacf2d8529e7bcca641b`. The
+[Zenodo concept record](https://doi.org/10.5281/zenodo.20046302) groups all dataset
+versions; use the version-specific DOI above to reproduce this revision.
+Earlier features, partitions and fitted states cannot reproduce this revision
+and must not be mixed with the current encoders.
 
 Reproduction requires the matching derived-analysis archive and, for operations
 that read them, the separate feature-matrix bundles. Archives preserve their

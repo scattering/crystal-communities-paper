@@ -12,8 +12,8 @@
     },
     {
       "path": "CITATION.cff",
-      "bytes": 3456,
-      "sha256": "2c91995a947bb4b18ca55612c439ffd6c2076247d1b197c445a180590127bde7"
+      "bytes": 3366,
+      "sha256": "487ef3df36fa82fee12d14bc8ad2e2a08c85d52f81b4724fcfb9b93bb309a9c9"
     },
     {
       "path": "LICENSE",
@@ -22,8 +22,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 6357,
-      "sha256": "1214cfb2a74ea36b56102c7e77a07d4d4a859637af525b4c78b2b810d32936b5"
+      "bytes": 6484,
+      "sha256": "bb92800dc0cea330f3e3c874a466e6c7f696d9adf1f2366524919816239a5cf3"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -57,8 +57,8 @@
     },
     {
       "path": "docs/HOW_TO_REPRODUCE.md",
-      "bytes": 7775,
-      "sha256": "8e41d8d8bf7b6c27e024cdd8fb29f6defd07212517c99be99beb429e070cb23d"
+      "bytes": 7842,
+      "sha256": "cf222de6d670e9d7793635ea6d26aad33e609e7750232690010ec28d12c454cf"
     },
     {
       "path": "docs/SCHEMA.md",
