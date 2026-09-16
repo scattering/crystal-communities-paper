@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Pipeline-overview schematic for Extended Data Figure 1.
+"""Pipeline-overview schematic for Supplementary Figure 1.
 
-Trunk: licensed ICSD CIFs → per-site features → Weisfeiler–Lehman → pool
-→ PCA frozen basis. The frozen basis forks into two analysis tracks:
-ICSD self-comparison (Louvain → temporal replay) and external-source
-projection (in-basin classification). Same geometry feeds both halves.
+Trunk: licensed ICSD CIFs → per-site features → propagation → pooling.
+The resulting raw features feed a full-record CrystalWeave map for the
+historical analyses and separately fitted cutoff maps for held-out
+calibration. The same encoder feeds both tracks.
 
 Each box has two lines: a technical/method title (bold) and a short
 plain-English subtitle (italic, same color). The subtitle is what makes
@@ -35,7 +35,7 @@ TITLE_COLOR = "#1f2530"
 
 LEFT_COLOR = "#0f6d61"      # ICSD self-comparison branch
 RIGHT_COLOR = "#b56200"     # external-projection branch
-HIGHLIGHT = "#8a2f2f"       # FROZEN BASIS — the fork point
+HIGHLIGHT = "#8a2f2f"       # reference fitting — the fork point
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,6 +44,8 @@ def parse_args() -> argparse.Namespace:
         "--output",
         default="resources/figures/icsd_densification/pipeline_schematic.png",
     )
+    p.add_argument("--n-structures", type=int, default=167392,
+                   help="Number of successfully encoded ICSD structures shown in the schematic.")
     return p.parse_args()
 
 
@@ -135,7 +137,7 @@ def main() -> int:
 
     add_box(ax, BX, Y_ICSD, BW, BH,
             "ICSD CIFs",
-            "167,500 inorganic crystals, dated by publication year")
+            f"{args.n_structures:,} successfully encoded ICSD entries")
 
     add_box(ax, BX, Y_FEAT, BW, BH,
             "Per-site features  (68-d)",
@@ -143,15 +145,15 @@ def main() -> int:
 
     add_box(ax, BX, Y_WL, BW, BH,
             "Weisfeiler–Lehman  (×3)",
-            "three rounds of neighbor-info mixing on the bond graph")
+            "neighbor mixing on a geometric CrystalNN graph")
 
     add_box(ax, BX, Y_POOL, BW, BH,
             "Structure pool  (213-d)",
             "aggregate sites + lattice into one vector per crystal")
 
     add_box(ax, BX, Y_PCA, BW + 0.6, BH + 0.10,
-            "PCA(32)   —   frozen basis",
-            "32-d compression, fixed once and used for every comparison",
+            "Standardization  +  PCA(32)",
+            "full-record map or independently fitted historical maps",
             face="#fbecec", edge=HIGHLIGHT, lw=2.0, title_color=HIGHLIGHT)
 
     for y_from, y_to in [
@@ -188,35 +190,35 @@ def main() -> int:
         connectionstyle="angle,angleA=-90,angleB=0,rad=0",
     )
 
-    # Left branch — ICSD self-comparison
+    # Left branch — full-record CrystalWeave map
     add_box(ax, LX, Y_BR1, BR_W, BR_H,
-            "Mutual k-NN  +  Louvain",
-            "build similarity graph, detect communities",
+            "Full-record graph  +  Louvain",
+            "communities from the complete historical record",
             edge=LEFT_COLOR, lw=1.7, title_color=LEFT_COLOR)
     add_box(ax, LX, Y_BR2, BR_W, BR_H,
-            "Temporal replay",
-            "reorder communities by publication year, track growth",
+            "Temporal replay  +  formula axis",
+            "community growth and formula precedent",
             edge=LEFT_COLOR, lw=1.7, title_color=LEFT_COLOR)
     add_box(ax, LX, Y_BR3, BR_W, BR_H,
-            "Figs.  1  &  2",
-            "structural memory of experimental discovery",
+            "Figs.  1,  2  &  4",
+            "history and two precedent coordinates",
             face="#eef6f4", edge=LEFT_COLOR, lw=1.7, title_color=LEFT_COLOR)
 
     add_arrow(ax, (LX, Y_BR1 - BR_H / 2 - 0.04), (LX, Y_BR2 + BR_H / 2 + 0.04), color=LEFT_COLOR)
     add_arrow(ax, (LX, Y_BR2 - BR_H / 2 - 0.04), (LX, Y_BR3 + BR_H / 2 + 0.04), color=LEFT_COLOR)
 
-    # Right branch — external-source projection
+    # Right branch — independently fitted historical-cutoff maps
     add_box(ax, RX, Y_BR1, BR_W, BR_H,
-            "Project 5 external samples",
-            "GNoME, MatterGen, MP, JARVIS, Alexandria",
+            "Historical graph  +  Louvain",
+            "fit only to ICSD entries available by T",
             edge=RIGHT_COLOR, lw=1.7, title_color=RIGHT_COLOR)
     add_box(ax, RX, Y_BR2, BR_W, BR_H,
-            "In-basin classification",
-            "is each computed structure inside a known basin?",
+            "Assign held-out structures",
+            "later ICSD and five computed cohorts",
             edge=RIGHT_COLOR, lw=1.7, title_color=RIGHT_COLOR)
     add_box(ax, RX, Y_BR3, BR_W, BR_H,
-            "Figs.  3  &  4",
-            "calibrated comparison of computed proposals",
+            "Fig.  3  +  Supplementary Fig.  4",
+            "in-basin rates and shared-composition controls",
             face="#fbf2e7", edge=RIGHT_COLOR, lw=1.7, title_color=RIGHT_COLOR)
 
     add_arrow(ax, (RX, Y_BR1 - BR_H / 2 - 0.04), (RX, Y_BR2 + BR_H / 2 + 0.04), color=RIGHT_COLOR)

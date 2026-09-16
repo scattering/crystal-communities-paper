@@ -26,7 +26,6 @@ Pipeline:
 """
 from __future__ import annotations
 
-import argparse
 import csv
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -36,8 +35,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
-from frontier_common import require_zenodo_file
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -218,37 +215,13 @@ def annual_rate_summary(year_hist: dict[int, int],
     }
 
 
-def parse_args() -> argparse.Namespace:
-    """CLI overrides for input/output paths (defaults match production layout)."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--community-assignments", default=str(COMMUNITY_ASSIGN),
-                        help="Path to community_assignments_labels3.csv.")
-    parser.add_argument("--post-cutoff-dir", action="append", default=None,
-                        help="Per-cutoff first-report directory. Repeatable. "
-                             "Defaults to the four production splits 1980/1990/2000/2010.")
-    parser.add_argument("--output-fig", default=str(OUT_FIG), help="Output PNG path.")
-    parser.add_argument("--output-json", default=str(OUT_JSON), help="Output summary JSON path.")
-    return parser.parse_args()
-
-
 def main() -> int:
-    args = parse_args()
-    community_assign = require_zenodo_file(
-        args.community_assignments,
-        what="canonical 167.5K-row ICSD community assignments table",
-    )
-    # post_cutoff_dirs is best-effort (used only to enrich the family-seed
-    # lookup; load_formula_lookup skips missing dirs). Don't gate on it.
-    post_cutoff_dirs = [Path(p) for p in (args.post_cutoff_dir or POST_CUTOFF_DIRS)]
-    out_fig = Path(args.output_fig)
-    out_json = Path(args.output_json)
-
     print("loading community assignments...", flush=True)
-    records = load_community_assignments(community_assign)
+    records = load_community_assignments(COMMUNITY_ASSIGN)
     print(f"  {len(records)} (icsd_id, year, community) rows", flush=True)
 
     print("loading formula lookup from post-cutoff CSVs...", flush=True)
-    formula_lookup = load_formula_lookup(post_cutoff_dirs)
+    formula_lookup = load_formula_lookup(POST_CUTOFF_DIRS)
     print(f"  {len(formula_lookup)} cif_id -> reduced_formula entries", flush=True)
 
     summary = {}
@@ -316,15 +289,14 @@ def main() -> int:
     axes[-1].set_xlabel("Publication year", fontsize=10)
     fig.suptitle("Community-size growth around scientific events", fontsize=12, fontweight="bold", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    out_fig.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_fig, dpi=180, bbox_inches="tight")
+    OUT_FIG.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(OUT_FIG, dpi=180, bbox_inches="tight")
     plt.close(fig)
 
     import json
-    out_json.parent.mkdir(parents=True, exist_ok=True)
-    out_json.write_text(json.dumps(summary, indent=2, default=str))
-    print(f"\nwrote figure to {out_fig}")
-    print(f"wrote summary to {out_json}")
+    OUT_JSON.write_text(json.dumps(summary, indent=2, default=str))
+    print(f"\nwrote figure to {OUT_FIG}")
+    print(f"wrote summary to {OUT_JSON}")
     return 0
 
 

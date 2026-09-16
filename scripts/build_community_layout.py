@@ -115,11 +115,11 @@ def main() -> int:
     nn = NearestNeighbors(n_neighbors=n_neighbors, n_jobs=-1).fit(Xk)
     _, knn_idx = nn.kneighbors(Xk)
 
-    # Inter-community edge counts. Skip self-edges (knn_idx[:, 0] == i).
+    # Inter-community edge counts. Ties can place self anywhere or omit it.
     inter: dict[tuple[int, int], int] = {}
     for i in range(len(Xk)):
         ci = int(Lk[i])
-        for j in knn_idx[i, 1:]:
+        for j in knn_idx[i][knn_idx[i] != i][:args.k]:
             cj = int(Lk[j])
             if cj == ci:
                 continue

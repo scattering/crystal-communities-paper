@@ -1,206 +1,117 @@
-# crystal-communities-paper
+# Crystal communities
 
-Companion repository for
+Scientific software and figures for **Structural memory links experimental discovery and computational novelty**, by Dan Nguyen, Karen Cao, Brian Chu, Nick
+Lemoff, Paul Kienzle and William Ratcliff II (2026).
 
-> **Computed materials proposals depart from the structural memory
-> of experimental discovery**
-> Nguyen, Cao, Chu, Lemoff, Kienzle, Ratcliff (submitted, 2026)
+The software maps crystal structures into experimental structural neighborhoods,
+replays those neighborhoods through publication time, and compares external
+materials collections through structural and formula precedent. This repository
+contains the analysis code, numerical tests, figures and dashboard. Manuscript
+source files are not part of this repository.
 
-This repository contains the code, figures, and an interactive dashboard
-needed to reproduce every analysis in the manuscript and to apply the
-framework to new external structure samples.
+## Representations
 
-The working-repository (with development history, ablations, and
-exploratory code) lives at `https://github.com/scattering/crystal-
-communities`; this repo is the frozen, curated subset that produced
-the submitted manuscript.
+| Representation | Information represented | Encoder |
+|---|---|---|
+| **CrystalWeave** | Chemistry and coordination, three weighted neighbor-aggregation rounds, pooled site descriptors and cell geometry; 213 components | `scripts/icsd_densify_worker.py` |
+| **Magpie-22** | Propagated structural ablation using 22 Magpie elemental properties; 4,491 components | `scripts/icsd_ablation_paper_text_worker.py` |
+| **Graphlet (CrystalNN)** | Normalized local property and geometry distributions using geometric CrystalNN neighbors | `experiments/graphlet_compare/graphlet_features.py` |
+| **Graphlet (VoronoiNN)** | The same local-histogram adaptation using radius-screened VoronoiNN neighbors | `experiments/graphlet_compare/graphlet_features.py` |
+| **AMD-100** | 100 average minimum distances describing species-independent periodic geometry | `experiments/amd_compare/amd_features.py` |
 
-## ⚠ Zenodo data bundle required for figure reproduction
+CrystalWeave successfully represents **167,392 ICSD entries**. Its filtered
+Louvain partition contains **2,939 communities** and 154,025 assigned entries;
+13,367 entries remain outliers. The two Graphlet variants are our 64-channel
+adaptation and are named separately throughout the analysis. Magpie-22 denotes
+this propagated representation, rather than a composition-only Magpie baseline.
 
-**This repository contains code + figures only. Every figure renderer
-except the data-free pipeline schematic requires the derived-data
-Zenodo bundle** (~330 MB). Download it before running anything beyond
-the smoke test:
+For each representation, a query is assigned to its nearest community centroid
+and compared with that community's 95th-percentile member distance. Formula
+analyses separately compare element sets, scale-invariant compositions,
+anonymous stoichiometries and nearest-ICSD Element Mover's Distance (ElMD).
 
-```bash
-# Zenodo DOI 10.5281/zenodo.20046302 (activates publicly at paper acceptance)
-zenodo_get 10.5281/zenodo.20046302  # concept DOI, always points to latest version -o notes/
-```
+## Data and release status
 
-### What works on a fresh clone (no data download)
+The current code uses the repaired feature version
+`crystal-features-v2-geometric-crystalnn`. **The corresponding revised data
+release is not yet published.** Its reserved version-specific DOI is
+[10.5281/zenodo.22700590](https://doi.org/10.5281/zenodo.22700590); it will become
+available when the draft is published. The
+[Zenodo concept record](https://doi.org/10.5281/zenodo.20046302) currently resolves
+to an earlier published dataset. Those older features, partitions and fitted
+states cannot reproduce this revision and must not be mixed with the current
+encoders.
 
-- `python scripts/smoke_reproduce.py` — sanity check; compiles all scripts and
-  renders the data-free pipeline schematic
-- `python scripts/make_fig_pipeline_schematic.py` — Extended Data Figure 1
+Reproduction requires the matching derived-analysis archive and, for operations
+that read them, the separate feature-matrix bundles. Archives preserve their
+repository-relative paths under `notes/`; the numerical data are kept outside
+Git. Every matrix must retain its ordered row identifiers and provenance. Raw
+ICSD CIFs and the licensed source index are excluded; recomputing descriptors
+from those inputs requires independent ICSD access.
 
-### What needs the Zenodo bundle
-
-- Every other `make_fig_*.py` figure renderer
-- Every `analyze_*.py` script that consumes ICSD-derived inputs
-- The interactive dashboard
-
-Scripts that need files not present locally will raise
-`FileNotFoundError` on the missing path; the file is in the Zenodo
-bundle by the same name. The full file inventory is documented in
-[`docs/SCHEMA.md`](docs/SCHEMA.md) and the step-by-step recipe in
-[`docs/HOW_TO_REPRODUCE.md`](docs/HOW_TO_REPRODUCE.md).
-
-### Why the data isn't in git
-
-The largest artifact (`features.npy`, the frozen 167,500-row ICSD
-feature matrix) is 280 MB; primary tables like
-`community_assignments_labels3.csv` are 2.9 MB and over 10 MB total
-across per-record CSVs. Keeping these on Zenodo with their own DOI
-gives them citable provenance independent of code churn, and avoids
-mixing licensed-data redistribution with the MIT-licensed code in
-this repository. The Zenodo deposit is CC-BY-4.0.
-
-## What's here
-
-```
-crystal-communities-paper/
-├── README.md          # this file
-├── LICENSE            # MIT, with NIST disclaimer; CC-BY-4.0 referenced for data
-├── environment.yml    # pinned conda env (matches TACC Stampede3 production)
-├── CITATION.cff       # so GitHub renders a "Cite this repo" button
-│
-├── figures/           # the 9 PNGs as submitted
-│   ├── Figure_1.png … Figure_4.png            # main text
-│   └── Extended_Data_Figure_1.png … _5.png    # extended data
-│
-├── scripts/           # 40 production .py + 11 TACC SLURM wrappers
-│   ├── make_fig_*.py            # 10 figure renderers
-│   ├── analyze_*_frontier.py    # 5 per-source projection producers
-│   ├── analyze_external_cif_zip_frontier.py    # generic CIF-zip projector
-│   ├── analyze_*.py             # composition-matched, formula-overlap,
-│   │                            # renaissance survey, synthesis-retrodiction,
-│   │                            # accessibility, TRI comparison, Kononova/A-Lab
-│   │                            # validation, etc.
-│   ├── icsd_densify_worker.py        # production featurization
-│   ├── icsd_graph_community_postprocess.py    # community detection
-│   ├── frontier_common.py            # shared helpers
-│   └── tacc/                         # SLURM wrappers (provenance)
-│
-├── dashboard/         # Plotly Dash app for interactive exploration
-│   ├── dash_app.py
-│   ├── index.html
-│   └── README.md
-│
-└── docs/
-    ├── HOW_TO_REPRODUCE.md     # step-by-step from a clean machine
-    ├── HOW_TO_EXTEND.md        # project your own external CIFs into the ICSD frame
-    └── SCHEMA.md               # data dictionary for the Zenodo bundle
-```
-
-## Quickstart
+## Setup
 
 ```bash
-git clone git@github.com:scattering/crystal-communities-paper.git
+git clone https://github.com/scattering/crystal-communities-paper.git
 cd crystal-communities-paper
 conda env create -f environment.yml
 conda activate crystal-communities
-
-# Pull the Zenodo bundle (~330 MB) so its contents land under ./notes/
-# (e.g. ./notes/features.npy). The figure scripts default to notes/.
-zenodo_get 10.5281/zenodo.20046302  # concept DOI, always points to latest version -o notes/
-
-# Regenerate any main-text figure, e.g. the synthesizability-prior quadrant:
-python scripts/make_fig_synth_prior_quadrant.py
+python -m pip install -r requirements-analysis-extra.txt
 ```
 
-See `docs/HOW_TO_REPRODUCE.md` for the complete chain of analysis →
-figure dependencies.
+`environment-recorded.json` records analysis dependency versions. Individual
+analysis manifests specify the environment and inputs for each run.
 
-## Two intended uses
-
-**1. Reproduce every figure.** The 10 `make_fig_*.py` scripts consume
-small JSON/CSV artifacts from the Zenodo bundle and emit the figure
-PNGs verbatim. Running all 10 takes under five minutes on a laptop
-once the Zenodo bundle is downloaded.
-
-**2. Extend the framework to your own structures.** The
-`analyze_external_cif_zip_frontier.py` script accepts an arbitrary
-ZIP of CIFs and projects them into the same frozen ICSD reference
-frame used throughout the manuscript. Output is a per-CIF record
-table with `assigned_community`, `nearest_centroid_distance`,
-`outlier_like`, `pca1`, `pca2`. See `docs/HOW_TO_EXTEND.md` for the
-recipe. Anyone with a new generative-AI structure release, a new
-DFT-screened candidate set, or a laboratory CIF library can compute
-the same calibrated structural-accessibility coordinate against ICSD
-without re-engineering.
-
-## Interactive dashboard
-
-A live deployment of the dashboard is hosted at
-**<https://crystalcommunities.org/>** — open it in any browser to
-explore the structural community map (with curated family labels
-for cuprates, Fe-pnictides 1111 / 122 / 111, lacunar spinels,
-perovskites, Laves phases, and other manuscript-anchored families),
-and upload your own CIF for upload-and-score evaluation against the
-frozen ICSD reference frame. The CIF-scoring result includes the
-manuscript's in-basin classification plus two reporting-layer
-signals — a categorical structural-match tier (VERY HIGH / HIGH /
-NEAR / DISTANT, based on absolute centroid distance) and a
-small-community caveat annotation for cases where the
-95th-percentile threshold is statistically tight; see
-`dashboard/README.md` for the full result schema.
-
-`dashboard/dash_app.py` is the Plotly Dash application that powers
-the deployment. To run it locally instead of using the hosted
-version:
+With the matching data installed, regenerate Figures 3 and 4 with:
 
 ```bash
-cd dashboard
-python dash_app.py
+python scripts/make_fig_external_precedent_revised.py
 ```
 
-Then open `http://localhost:8050`. The app loads the Zenodo bundle on
-startup, so the bundle must be present locally.
+See [reproduction instructions](docs/HOW_TO_REPRODUCE.md), the
+[data dictionary](docs/SCHEMA.md), and [new-structure scoring](docs/HOW_TO_EXTEND.md)
+for the current entry points, frozen states and required files. Some older
+scripts retain historical default paths; the reproduction guide identifies the
+current producers and explicit inputs.
 
-## Compute platform
+## What the comparisons measure
 
-Production featurization, frontier-projection, and renaissance-survey
-runs were executed on the Texas Advanced Computing Center (TACC)
-Stampede3 cluster under contract to NIST and through ACCESS allocation
-PHY250007. The TACC SLURM wrappers (`scripts/tacc/run_*.sh`) document
-the exact node, partition, and arguments used for each production run.
-Local re-runs of any individual figure on a laptop take seconds to
-minutes from the Zenodo bundle.
+Temporal neighborhood densification persists across the five representations.
+External-cohort basin occupancy depends on the descriptor and reference map:
+GNoME combines rare exact ICSD formula precedent with familiar local Graphlet
+and periodic-distance patterns. Its lower CrystalWeave occupancy remains a
+feature-specific contrast, rather than a universal ranking of material sources.
+The A-Lab analysis compares pre-experiment target structures with synthesis
+outcomes, including both Graphlet maps and AMD as controls. These analyses
+measure structural precedent and campaign-specific outcome associations;
+they do not turn a basin label into a probability of synthesis success.
 
-## Data
+## Dashboard
 
-> Zenodo DOI: [10.5281/zenodo.20046302](https://doi.org/10.5281/zenodo.20046302) (activates publicly at paper acceptance).
+`dashboard/dash_app.py` explores the saved CrystalWeave map and scores uploaded
+CIFs against the same frozen basis. It requires a validated artifact manifest;
+without one the app displays which data are missing and disables scoring.
+See [dashboard setup](dashboard/README.md). Updating this checkout does not
+update the separately hosted service at [crystalcommunities.org](https://crystalcommunities.org/).
 
-Bundle contents and column-level schema are documented in
-[`docs/SCHEMA.md`](docs/SCHEMA.md). **No raw ICSD CIFs are distributed
-here or on Zenodo** — ICSD is licensed by FIZ Karlsruhe. Only
-structure-derived embeddings, integer ICSD IDs, formulas, and distances
-are released; users who want to regenerate the embedding from raw CIFs
-must obtain their own ICSD license. The framework's downstream-use
-entry point (`analyze_external_cif_zip_frontier.py`) requires only the
-Zenodo bundle, not the ICSD license itself.
+## Repository layout
 
-## License
+- `scripts/`: encoders, projection, regeneration and figure producers.
+- `experiments/`: Graphlet, AMD and other representation comparisons.
+- `tests/`: numerical and provenance checks; some require matching data.
+- `notes/`: analysis-specific source modules at their original import paths;
+  derived datasets are supplied separately.
+- `figures/`: current figure exports, including `icsd_densification/` outputs.
+- `dashboard/`: Dash application and version-bound scoring backend.
+- `docs/`: setup, artifact schema and reuse instructions.
 
-Code: MIT, with NIST public-domain disclaimer for U.S.-Government-
-employee contributions. See `LICENSE` for full text.
+## Citation and license
 
-Data (Zenodo bundle): CC-BY-4.0.
+Nguyen, D., Cao, K., Chu, B., Lemoff, N., Kienzle, P. & Ratcliff II, W.
+*Structural memory links experimental discovery and computational novelty.*
+Manuscript under review (2026). See [CITATION.cff](CITATION.cff) for metadata.
+When citing a dataset, use the specific released version that you analyzed.
 
-## Citing this work
-
-Until the manuscript appears in print, please cite as:
-
-> Nguyen, D., Cao, K., Chu, B., Lemoff, N., Kienzle, P.,
-> Ratcliff, W. *Computed materials proposals depart from the
-> structural memory of experimental discovery.* Submitted (2026).
-> Code: https://github.com/scattering/crystal-communities-paper.
-> Data: Zenodo DOI [10.5281/zenodo.20046302](https://doi.org/10.5281/zenodo.20046302).
-
-A `CITATION.cff` is provided for GitHub's "Cite this repository"
-button.
-
-## Contact
-
-Questions about the analysis, the dashboard, or the Zenodo bundle:
-`william.ratcliff@nist.gov`.
+Code is provided under the terms in [LICENSE](LICENSE), with third-party
+attribution in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Derived-data
+archives carry their own license and version metadata.

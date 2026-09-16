@@ -10,10 +10,12 @@ Kononova-positive set would confirm that the score tracks
 human-relevant synthesizability rather than just embedding distance.
 
 Pipeline:
-  1. Load Kononova reduced formulas from the .json.xz dump.
+  1. Load Kononova targets from the .json.xz dump and convert parseable
+     targets to normalized-first, scale-invariant composition keys.
   2. Read the post-cutoff scored records emitted by
      ``analyze_synthesis_retrodiction.py``.
-  3. Class-center first-report 𝒜ᵢ within composition classes
+  3. Retain the earliest post-cutoff report per scale-invariant formula and
+     class-center 𝒜ᵢ within OPTIMADE-style anonymous stoichiometry classes
      (``--min-class-size`` per class) to avoid pure-chemistry
      confounding (mirrors ``analyze_synthesis_pivot.py``).
   4. Compare Kononova-positive vs. Kononova-negative class-centered
@@ -34,6 +36,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import importlib.metadata
 import json
 import lzma
 from collections import defaultdict
@@ -44,7 +48,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from pymatgen.core import Composition
+
+from formula_conventions import (
+    anonymous_stoichiometry_key,
+    scale_invariant_formula_key,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,19 +88,27 @@ def mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def reduce_formula(text: str) -> str | None:
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def formula_key(text: str) -> tuple[tuple[str, int], ...] | None:
     text = (text or "").strip()
     if not text:
         return None
     try:
-        return Composition(text).reduced_formula
+        return scale_invariant_formula_key(text)
     except Exception:
         return None
 
 
-def anonymized_formula(text: str) -> str | None:
+def anonymized_formula(text: str) -> tuple[int, ...] | None:
     try:
-        return Composition(text).anonymized_formula
+        return anonymous_stoichiometry_key(text)
     except Exception:
         return None
 
@@ -108,51 +124,66 @@ def ks_statistic(a: list[float], b: list[float]) -> float | None:
     return float(np.max(np.abs(cdfa - cdfb)))
 
 
-def load_kononova_formulas(path: Path) -> set[str]:
+def load_kononova_formulas(
+    path: Path,
+) -> tuple[set[tuple[tuple[str, int], ...]], dict[str, int]]:
     with lzma.open(path, "rt", encoding="utf-8") as handle:
         data = json.load(handle)
-    formulas: set[str] = set()
+    formulas: set[tuple[tuple[str, int], ...]] = set()
+    target_count = 0
+    parse_failures = 0
     for rxn in data.get("reactions", []):
         target = rxn.get("target") or {}
-        formula = (
-            target.get("material_formula")
-            or target.get("material_string")
-            or rxn.get("targets_string", [None])[0]
-        )
-        reduced = reduce_formula(formula or "")
-        if reduced:
-            formulas.add(reduced)
-    return formulas
+        formula = target.get("material_formula") or target.get("material_string")
+        if not formula:
+            candidates = rxn.get("targets_string")
+            if isinstance(candidates, list) and candidates:
+                formula = candidates[0]
+            elif isinstance(candidates, str):
+                formula = candidates
+        if formula:
+            target_count += 1
+        key = formula_key(formula or "")
+        if key:
+            formulas.add(key)
+        elif formula:
+            parse_failures += 1
+    return formulas, {
+        "reactions": len(data.get("reactions", [])),
+        "target_records": target_count,
+        "target_parse_failures": parse_failures,
+    }
 
 
 def load_first_reports(path: Path) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
-            formula = reduce_formula(row.get("reduced_formula", ""))
+            display_formula = (row.get("reduced_formula", "") or "").strip()
+            key = formula_key(display_formula)
             score = parse_float(row.get("A_i", ""))
             year = parse_int(row.get("year", ""))
-            if formula is None or score is None or year is None:
+            if key is None or score is None or year is None:
                 continue
-            anon = anonymized_formula(formula)
+            anon = anonymized_formula(display_formula)
             if anon is None:
                 continue
-            comp = Composition(formula)
             rows.append(
                 {
-                    "reduced_formula": formula,
+                    "reduced_formula": display_formula,
+                    "formula_key": key,
                     "A_i": score,
                     "year": year,
-                    "class_key": f"{anon}|{len(comp.elements)}",
+                    "class_key": f"{anon}|{len(anon)}",
                 }
             )
 
-    first_by_formula: dict[str, dict[str, object]] = {}
+    first_by_formula: dict[tuple[tuple[str, int], ...], dict[str, object]] = {}
     for row in rows:
-        formula = str(row["reduced_formula"])
-        prev = first_by_formula.get(formula)
+        key = row["formula_key"]
+        prev = first_by_formula.get(key)
         if prev is None or int(row["year"]) < int(prev["year"]):
-            first_by_formula[formula] = row
+            first_by_formula[key] = row
     return list(first_by_formula.values())
 
 
@@ -173,11 +204,14 @@ def class_center_rows(rows: list[dict[str, object]], min_class_size: int) -> tup
     return out, class_sizes
 
 
-def add_kononova_labels(rows: list[dict[str, object]], positives: set[str]) -> list[dict[str, object]]:
+def add_kononova_labels(
+    rows: list[dict[str, object]],
+    positives: set[tuple[tuple[str, int], ...]],
+) -> list[dict[str, object]]:
     out = []
     for row in rows:
         new = dict(row)
-        new["in_kononova"] = int(str(row["reduced_formula"]) in positives)
+        new["in_kononova"] = int(row["formula_key"] in positives)
         out.append(new)
     return out
 
@@ -206,10 +240,12 @@ def make_plot(pos_vals: list[float], neg_vals: list[float], out_path: Path) -> N
     if pooled:
         lo = np.percentile(pooled, 10)
         hi = np.percentile(pooled, 90)
-        bottom = [(v in pos_vals) for v in (pos_vals + neg_vals) if v <= lo]
-        top = [(v in pos_vals) for v in (pos_vals + neg_vals) if v >= hi]
-        rates[0] = mean([1.0 if x else 0.0 for x in bottom]) if bottom else 0.0
-        rates[1] = mean([1.0 if x else 0.0 for x in top]) if top else 0.0
+        values = np.asarray(pos_vals + neg_vals, dtype=float)
+        labels = np.asarray([1.0] * len(pos_vals) + [0.0] * len(neg_vals))
+        bottom = labels[values <= lo]
+        top = labels[values >= hi]
+        rates[0] = float(bottom.mean()) if len(bottom) else 0.0
+        rates[1] = float(top.mean()) if len(top) else 0.0
     axes[1].bar(groups, rates, color=["#1b9e77", "#d95f02"])
     axes[1].set_ylim(0, max(0.05, max(rates) * 1.2))
     axes[1].set_ylabel("Kononova positive fraction")
@@ -225,8 +261,10 @@ def main() -> int:
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    positives = load_kononova_formulas(Path(args.kononova_json_xz))
-    rows = load_first_reports(Path(args.scored_csv))
+    kononova_path = Path(args.kononova_json_xz)
+    scored_path = Path(args.scored_csv)
+    positives, corpus_stats = load_kononova_formulas(kononova_path)
+    rows = load_first_reports(scored_path)
     rows, class_sizes = class_center_rows(rows, min_class_size=args.min_class_size)
     rows = add_kononova_labels(rows, positives)
 
@@ -239,6 +277,20 @@ def main() -> int:
     top = [r for r in rows if dec90 is not None and float(r["class_centered_A_i"]) >= dec90]
 
     summary = {
+        "method": {
+            "formula_identity": "element-collapsed normalized-first scale_invariant_formula_key",
+            "composition_class": "OPTIMADE-style anonymous_stoichiometry_key",
+            "first_report": "earliest year per scale-invariant composition key",
+            "min_class_size": int(args.min_class_size),
+            "pymatgen_version": importlib.metadata.version("pymatgen"),
+        },
+        "inputs": {
+            "kononova_json_xz": str(kononova_path.resolve()),
+            "kononova_sha256": sha256_file(kononova_path),
+            "scored_csv": str(scored_path.resolve()),
+            "scored_csv_sha256": sha256_file(scored_path),
+        },
+        "corpus_parse": corpus_stats,
         "n_kononova_unique_formulas": len(positives),
         "n_first_reports_considered": len(rows),
         "n_classes_ge_min_size": sum(1 for v in class_sizes.values() if v >= args.min_class_size),
@@ -259,9 +311,18 @@ def main() -> int:
     (out_dir / "kononova_validation_summary.json").write_text(json.dumps(summary, indent=2))
 
     with (out_dir / "kononova_class_centered_first_reports.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()) if rows else ["reduced_formula"])
+        serializable_rows = []
+        for row in rows:
+            record = dict(row)
+            if "formula_key" in record:
+                record["formula_key"] = json.dumps(record["formula_key"], separators=(",", ":"))
+            serializable_rows.append(record)
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(serializable_rows[0].keys()) if serializable_rows else ["reduced_formula"],
+        )
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(serializable_rows)
 
     make_plot(pos, neg, out_dir / "kononova_validation_summary.png")
     return 0

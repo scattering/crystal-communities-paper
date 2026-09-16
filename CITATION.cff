@@ -1,8 +1,7 @@
 cff-version: 1.2.0
 title: >-
-  crystal-communities-paper: companion repository for "Computed
-  materials proposals depart from the structural memory of
-  experimental discovery"
+  Crystal communities: Structural memory links experimental discovery
+  and computational novelty
 message: >-
   If you use this software or the derived data, please cite the
   manuscript (DOI to be assigned at publication) and this repository.
@@ -46,13 +45,13 @@ repository-code: 'https://github.com/scattering/crystal-communities-paper'
 license: MIT
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.20046302
+    value: 10.5281/zenodo.22700590
     description: >-
-      Zenodo archive of derived analysis artifacts (v1):
-      featurized embeddings, community-assignment CSVs, per-source
-      frontier records, renaissance-survey outputs, and the SI §S9
-      graphlet-pipeline temporal-replay summary. Activates publicly
-      at paper acceptance.
+      Reserved version-specific DOI for the revised derived analysis
+      artifacts and source snapshot. This Zenodo draft is not yet published;
+      the DOI will become available upon publication. Earlier published
+      versions contain different features and do not reproduce this revision.
+      Cite the specific dataset version used in an analysis.
 keywords:
   - inorganic crystal structure database
   - materials informatics
@@ -84,9 +83,8 @@ preferred-citation:
       given-names: William
       orcid: 'https://orcid.org/0000-0001-8956-3851'
   title: >-
-    Computed materials proposals depart from the structural
-    memory of experimental discovery
+    Structural memory links experimental discovery and computational novelty
   year: 2026
   notes: >-
-    Submitted manuscript. Update with journal, volume, and DOI when
-    accepted.
+    Manuscript under review (2026). Publication details will be added
+    when available.

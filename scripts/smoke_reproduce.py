@@ -58,6 +58,8 @@ def main() -> int:
         [
             sys.executable,
             "scripts/make_fig_pipeline_schematic.py",
+            "--n-structures",
+            "167392",
             "--output",
             str(out_dir / "pipeline_schematic.png"),
         ],

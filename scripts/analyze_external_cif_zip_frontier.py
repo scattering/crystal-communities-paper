@@ -29,8 +29,8 @@ Outputs (under ``--output-dir``):
   ``{label}_frontier_failures.json`` per-CIF parse / embedding errors.
   ``{label}_frontier_pca.png``       overlay scatter for QA.
 
-Manuscript invocation (MatterGen) is recorded at
-``scripts/tacc/run_mattergen_frontier_skxdev.sh``.
+The original MatterGen invocation used a TACC batch wrapper that is not
+distributed.
 """
 from __future__ import annotations
 
@@ -55,6 +55,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from icsd_densify_worker import build_structure_embedding
+from feature_provenance import require_feature_version
 
 
 ZIP_HANDLE: zipfile.ZipFile | None = None
@@ -218,6 +219,7 @@ def plot_frontier(ic_x2: np.ndarray, ai_x2: np.ndarray, outlier_like: np.ndarray
 
 def main() -> int:
     args = parse_args()
+    require_feature_version(args.icsd_features)
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

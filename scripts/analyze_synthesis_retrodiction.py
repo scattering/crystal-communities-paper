@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Held-out historical retrodiction for the structural accessibility score.
+"""Fixed-map historical retrodiction for the structural accessibility score.
 
 Cited from Methods. The premise: if the per-community structural-
 accessibility score 𝒜ᵢ captures *synthesizability priority* and not
 just nearest-centroid distance, then on entries reported *after* an
-artificial cutoff, the *first* observed reduced-formula instance
-should arrive earlier the lower 𝒜ᵢ is, even though those entries
-were unseen at training time. This script trains the entire scoring
-pipeline on ICSD entries with year ≤ ``--holdout-year`` (default 2000;
-the manuscript also reports 1990 / 2010) and scores everything that
-came later.
+artificial cutoff, the *first* observed nominal-composition instance
+should arrive earlier the lower 𝒜ᵢ is. This legacy sensitivity keeps
+the full-record PCA basis and production community labels, then fits
+the score parameters using entries available by ``--holdout-year``
+(default 2000; the manuscript also reports 1990 / 2010). Use
+``analyze_cutoff_trained_retrospective.py`` for the independently
+trained cutoff maps used in the primary historical comparison.
 
 Pipeline:
   1. Load frozen ICSD raw matminer features and the production graph
@@ -22,7 +23,7 @@ Pipeline:
      the same training subset.
   3. Score every post-cutoff ICSD entry by nearest-centroid distance,
      in-basin flag, and standardized 𝒜ᵢ.
-  4. For each reduced formula appearing post-cutoff, take the
+  4. For each normalized nominal composition appearing post-cutoff, take the
      *earliest* entry (its year-of-first-report); compute Spearman ρ
      of 𝒜ᵢ vs. first-report year and of in_basin vs. first-report
      year. Build a year-permutation null over ``--null-repeats``
@@ -61,10 +62,16 @@ import numpy as np
 from pymatgen.core import Composition
 from sklearn.decomposition import PCA
 
+try:
+    from formula_conventions import normalized_fraction_key
+except ModuleNotFoundError:  # Imported as ``scripts.analyze_*`` in tests.
+    from scripts.formula_conventions import normalized_fraction_key
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Internal synthesis retrodiction on post-cutoff ICSD.")
     parser.add_argument("--features", required=True)
+    parser.add_argument("--features-pca", help="Saved production PCA coordinates; avoids fitting a second projection.")
     parser.add_argument("--community-assignments", required=True)
     parser.add_argument("--sample-assignments", required=True)
     parser.add_argument("--icsd-index", required=True)
@@ -110,6 +117,16 @@ def reduce_formula(text: str) -> str | None:
         return Composition(text).reduced_formula
     except Exception:
         return None
+
+
+def normalized_formula_identity_token(formula: str) -> str:
+    """Serialize one nominal-composition key for every ICSD record."""
+    if not str(formula).strip():
+        return ""
+    elements, fractions = normalized_fraction_key(formula, decimals=12)
+    return "|".join(elements) + "::" + ",".join(
+        f"{value:.12g}" for value in fractions
+    )
 
 
 def rankdata(values: list[float]) -> list[float]:
@@ -206,14 +223,14 @@ def raw_accessibility(distance: float, core_threshold: float, size: float, commu
     return math.log1p(norm_dist) - 0.5 * math.log1p(size) - 0.5 * math.log1p(max(community_age, 0.0))
 
 
-def scatter_plot(first_reports: list[dict[str, object]], rho: float | None, out_path: Path) -> None:
+def scatter_plot(first_reports: list[dict[str, object]], rho: float | None, out_path: Path, cutoff: int = 2000) -> None:
     x = [float(row["A_i"]) for row in first_reports]
     y = [float(row["year"]) for row in first_reports]
     fig, ax = plt.subplots(figsize=(6.2, 4.6))
     ax.scatter(x, y, s=10, alpha=0.35, c="#1b9e77", linewidths=0)
-    ax.set_xlabel("Pre-2000 structural accessibility score $A_i$")
-    ax.set_ylabel("First post-2000 report year")
-    ax.set_title("Post-2000 ICSD retrodiction")
+    ax.set_xlabel(f"Through-{cutoff} structural accessibility score $A_i$")
+    ax.set_ylabel(f"First post-{cutoff} report year")
+    ax.set_title(f"Post-{cutoff} ICSD retrodiction")
     if rho is not None:
         ax.text(0.03, 0.97, f"Spearman rho = {rho:.3f}", transform=ax.transAxes, va="top", ha="left")
     fig.tight_layout()
@@ -226,7 +243,7 @@ def main() -> int:
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    X = np.load(args.features)
+    X = np.load(args.features, mmap_mode="r")
     comm_rows = load_comm_rows(Path(args.community_assignments))
     sample_rows = load_sample_rows(Path(args.sample_assignments))
     index = load_icsd_index(Path(args.icsd_index))
@@ -235,8 +252,15 @@ def main() -> int:
     aligned_rows = list(sample_rows)
     labels = np.asarray([community_by_id.get(row["icsd_id"], -1) if row["icsd_id"] is not None else -1 for row in aligned_rows], dtype=int)
 
-    Xs = (X - X.mean(axis=0)) / np.where(X.std(axis=0) == 0, 1.0, X.std(axis=0))
-    Xp = PCA(n_components=min(32, Xs.shape[0], Xs.shape[1]), random_state=args.seed).fit_transform(Xs)
+    if len({row["icsd_id"] for row in aligned_rows}) != len(aligned_rows):
+        raise ValueError("Duplicate sample IDs")
+    if X.shape[0] != len(aligned_rows):
+        raise ValueError("Raw features and sample rows are not aligned")
+    if args.features_pca:
+        Xp = np.load(args.features_pca)
+    else:
+        Xs = (X - X.mean(axis=0)) / np.where(X.std(axis=0) == 0, 1.0, X.std(axis=0))
+        Xp = PCA(n_components=min(32, Xs.shape[0], Xs.shape[1]), random_state=args.seed).fit_transform(Xs)
     if Xp.shape[0] != len(aligned_rows):
         raise ValueError(f"Feature rows ({Xp.shape[0]}) != aligned assignment rows ({len(aligned_rows)})")
 
@@ -287,6 +311,9 @@ def main() -> int:
             {
                 "cif_id": int(icsd_id),
                 "reduced_formula": meta.get("reduced_formula"),
+                "formula_identity": normalized_formula_identity_token(
+                    str(meta.get("reduced_formula") or "")
+                ),
                 "year": int(year),
                 "assigned_community": comm,
                 "nearest_centroid_distance": dist,
@@ -295,14 +322,17 @@ def main() -> int:
             }
         )
 
-    scored_rows = [row for row in scored_rows if row["reduced_formula"]]
+    scored_rows = [row for row in scored_rows if row["formula_identity"]]
     first_by_formula: dict[str, dict[str, object]] = {}
-    for row in scored_rows:
-        formula = str(row["reduced_formula"])
-        prev = first_by_formula.get(formula)
-        if prev is None or int(row["year"]) < int(prev["year"]):
-            first_by_formula[formula] = row
-    first_reports = list(first_by_formula.values())
+    for row in sorted(
+        scored_rows, key=lambda item: (int(item["year"]), int(item["cif_id"]))
+    ):
+        identity = str(row["formula_identity"])
+        first_by_formula.setdefault(identity, row)
+    first_reports = sorted(
+        first_by_formula.values(),
+        key=lambda item: (int(item["year"]), int(item["cif_id"])),
+    )
 
     rho = spearman([float(r["A_i"]) for r in first_reports], [float(r["year"]) for r in first_reports])
     rho_in_basin = spearman([float(r["is_in_basin"]) for r in first_reports], [float(r["year"]) for r in first_reports])
@@ -324,13 +354,13 @@ def main() -> int:
 
     by_formula: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in scored_rows:
-        by_formula[str(row["reduced_formula"])].append(row)
+        by_formula[str(row["formula_identity"])].append(row)
     polymorph_formulas = {f: rows for f, rows in by_formula.items() if len({int(r["year"]) for r in rows}) > 1}
 
     first_easier_count = 0
     total_races = 0
     sibling_rows = []
-    for formula, rows in polymorph_formulas.items():
+    for formula_identity, rows in polymorph_formulas.items():
         first_year = min(int(r["year"]) for r in rows)
         first_vals = [float(r["A_i"]) for r in rows if int(r["year"]) == first_year]
         later_vals = [float(r["A_i"]) for r in rows if int(r["year"]) > first_year]
@@ -344,7 +374,11 @@ def main() -> int:
         total_races += 1
         sibling_rows.append(
             {
-                "reduced_formula": formula,
+                "reduced_formula": min(
+                    (row for row in rows if int(row["year"]) == first_year),
+                    key=lambda row: int(row["cif_id"]),
+                )["reduced_formula"],
+                "formula_identity": formula_identity,
                 "first_year": first_year,
                 "first_A_i_mean": first_A,
                 "later_A_i_mean": later_A,
@@ -353,11 +387,17 @@ def main() -> int:
         )
 
     summary = {
+        "features_pca": args.features_pca,
+        "projection_scope": "full-cohort projection and partition; cutoff-trained centroids, p95 radii, and score moments",
         "holdout_year": int(args.holdout_year),
         "threshold_percentile": float(args.threshold_percentile),
         "n_train_icsd": int(np.sum(train_mask)),
         "n_post_cutoff_icsd": int(np.sum(holdout_mask)),
         "n_first_report_formulas": int(len(first_reports)),
+        "formula_identity_rule": (
+            "element-sorted normalized atomic fractions rounded to 12 decimal "
+            "places for every record; lowest ICSD identifier breaks earliest-year ties"
+        ),
         "spearman_Ai_vs_first_report_year": rho,
         "spearman_in_basin_vs_first_report_year": rho_in_basin,
         "null_mean_rho": mean(null_rhos) if null_rhos else None,
@@ -394,7 +434,7 @@ def main() -> int:
         writer.writerows(sibling_rows)
 
     if first_reports:
-        scatter_plot(first_reports, rho, out_dir / "retrodiction_first_report_scatter.png")
+        scatter_plot(first_reports, rho, out_dir / "retrodiction_first_report_scatter.png", args.holdout_year)
     return 0
 
 

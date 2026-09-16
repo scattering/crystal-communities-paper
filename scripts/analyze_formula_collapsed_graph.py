@@ -2,7 +2,7 @@
 """Build a formula-level structural graph and compare it to the TRI network.
 
 Supports SI §S2. Collapses the per-entry structural k-NN graph to a
-formula-level graph: each node is a reduced formula appearing at least
+formula-level graph: each node is a normalized nominal composition appearing at least
 ``--min-formula-count`` times in ICSD; an edge exists between two
 formulas if at least one structural-graph edge connects entries with
 those formulas. Reports per-formula structural-graph degree,
@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 from collections import Counter, defaultdict
@@ -36,6 +37,11 @@ import networkx as nx
 import numpy as np
 from pymatgen.core import Composition
 from sklearn.neighbors import NearestNeighbors
+
+from formula_conventions import normalized_fraction_key
+
+
+FormulaIdentity = tuple[tuple[str, ...], tuple[float, ...]]
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,6 +65,24 @@ def reduce_formula(text: str) -> str | None:
         return Composition(text).reduced_formula
     except Exception:
         return None
+
+
+def formula_identity(text: str) -> FormulaIdentity | None:
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return normalized_fraction_key(text, decimals=12)
+    except Exception:
+        return None
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def rankdata(values: list[float]) -> list[float]:
@@ -111,6 +135,7 @@ def load_icsd_index(path: Path) -> dict[int, dict[str, object]]:
                 year = None
             out[icsd_id] = {
                 "formula": reduce_formula(row.get("name", "")),
+                "formula_identity": formula_identity(row.get("name", "")),
                 "year": year,
             }
     return out
@@ -132,13 +157,16 @@ def load_sample_rows(path: Path) -> list[dict[str, int | None]]:
     return rows
 
 
-def load_tri_existing(path: Path) -> dict[str, dict[str, float | int]]:
+def load_tri_existing(path: Path) -> dict[FormulaIdentity, dict[str, object]]:
     data = json.loads(path.read_text())
     out = {}
     for formula, attrs in data.items():
         reduced = reduce_formula(formula)
-        if reduced is None:
+        identity = formula_identity(formula)
+        if reduced is None or identity is None:
             continue
+        if identity in out:
+            raise ValueError(f"TRI formulas collide under normalized identity: {formula!r}")
         def scalarize(value):
             if isinstance(value, list):
                 value = value[-1] if value else None
@@ -148,7 +176,8 @@ def load_tri_existing(path: Path) -> dict[str, dict[str, float | int]]:
                 return float(value)
             except Exception:
                 return None
-        out[reduced] = {
+        out[identity] = {
+            "formula": reduced,
             "tri_formula_raw": formula,
             "tri_deg": float(scalarize(attrs.get("deg")) or 0.0),
             "tri_eigen_cent": float(scalarize(attrs.get("eigen_cent")) or 0.0),
@@ -158,12 +187,17 @@ def load_tri_existing(path: Path) -> dict[str, dict[str, float | int]]:
     return out
 
 
-def build_graph(X: np.ndarray, labels: list[str], k: int, mutual_knn: bool) -> nx.Graph:
+def build_graph(
+    X: np.ndarray, labels: list[FormulaIdentity], k: int, mutual_knn: bool
+) -> nx.Graph:
     nbrs = NearestNeighbors(n_neighbors=min(k + 1, len(X)), metric="euclidean")
     nbrs.fit(X)
     distances, indices = nbrs.kneighbors(X)
-    neighbor_sets = [set(row[1:]) for row in indices]
-    positive = distances[:, 1:]
+    # A duplicate vector may precede the query in a zero-distance tie.
+    neighbors = [[(int(j), float(d)) for j, d in zip(js, ds) if int(j) != i][:k]
+                 for i, (js, ds) in enumerate(zip(indices, distances))]
+    neighbor_sets = [{j for j, _ in row} for row in neighbors]
+    positive = np.asarray([d for row in neighbors for _, d in row])
     sigma = float(np.median(positive[positive > 0])) if np.any(positive > 0) else 1.0
     sigma = max(sigma, 1e-8)
 
@@ -171,7 +205,7 @@ def build_graph(X: np.ndarray, labels: list[str], k: int, mutual_knn: bool) -> n
     for label in labels:
         G.add_node(label)
     for i, label_i in enumerate(labels):
-        for j, dist in zip(indices[i, 1:], distances[i, 1:]):
+        for j, dist in neighbors[i]:
             j = int(j)
             if i == j:
                 continue
@@ -187,21 +221,21 @@ def build_graph(X: np.ndarray, labels: list[str], k: int, mutual_knn: bool) -> n
     return G
 
 
-def eigenvector_centrality_by_component(graph: nx.Graph) -> dict[str, float]:
+def eigenvector_centrality_by_component(graph: nx.Graph) -> dict[FormulaIdentity, float]:
     if graph.number_of_nodes() == 0:
         return {}
-    out: dict[str, float] = {}
+    out: dict[FormulaIdentity, float] = {}
     for nodes in nx.connected_components(graph):
         sub = graph.subgraph(nodes).copy()
         if sub.number_of_nodes() == 1:
             node = next(iter(sub.nodes()))
-            out[str(node)] = 1.0
+            out[node] = 1.0
             continue
         try:
             vals = nx.eigenvector_centrality_numpy(sub, weight="weight")
         except Exception:
             vals = nx.eigenvector_centrality(sub, weight="weight", max_iter=500, tol=1e-06)
-        out.update({str(k): float(v) for k, v in vals.items()})
+        out.update({k: float(v) for k, v in vals.items()})
     return out
 
 
@@ -217,19 +251,19 @@ def main() -> int:
     index = load_icsd_index(Path(args.icsd_index))
     tri = load_tri_existing(Path(args.tri_dir) / "data" / "NetworkParams_ExistingMaterials_v1.1.json")
 
-    formula_members: dict[str, list[int]] = defaultdict(list)
-    formula_years: dict[str, list[int]] = defaultdict(list)
+    formula_members: dict[FormulaIdentity, list[int]] = defaultdict(list)
+    formula_years: dict[FormulaIdentity, list[int]] = defaultdict(list)
     for i, row in enumerate(sample_rows):
         meta = index.get(int(row["icsd_id"]))
         if not meta:
             continue
-        formula = meta["formula"]
-        if formula is None:
+        identity = meta["formula_identity"]
+        if identity is None:
             continue
-        formula_members[str(formula)].append(i)
+        formula_members[identity].append(i)
         year = meta["year"]
         if year is not None:
-            formula_years[str(formula)].append(int(year))
+            formula_years[identity].append(int(year))
 
     kept = {f: idxs for f, idxs in formula_members.items() if len(idxs) >= args.min_formula_count}
     formulas = sorted(kept)
@@ -244,21 +278,21 @@ def main() -> int:
 
     shared = sorted(set(formulas) & set(tri))
     rows = []
-    for formula in shared:
+    for identity in shared:
         rows.append(
             {
-                "formula": formula,
-                "n_entries": int(len(kept[formula])),
-                "first_year": min(formula_years[formula]) if formula_years[formula] else None,
-                "struct_deg": int(degree.get(formula, 0)),
-                "struct_core": int(core.get(formula, 0)),
-                "struct_clustering": float(clustering.get(formula, 0.0)),
-                "struct_eigen": float(eig.get(formula, 0.0)),
-                "struct_betweenness": float(between.get(formula, 0.0)),
-                "tri_deg": float(tri[formula]["tri_deg"]),
-                "tri_eigen_cent": float(tri[formula]["tri_eigen_cent"]),
-                "tri_clus_coeff": float(tri[formula]["tri_clus_coeff"]),
-                "tri_discovery": int(tri[formula]["tri_discovery"]),
+                "formula": tri[identity]["formula"],
+                "n_entries": int(len(kept[identity])),
+                "first_year": min(formula_years[identity]) if formula_years[identity] else None,
+                "struct_deg": int(degree.get(identity, 0)),
+                "struct_core": int(core.get(identity, 0)),
+                "struct_clustering": float(clustering.get(identity, 0.0)),
+                "struct_eigen": float(eig.get(identity, 0.0)),
+                "struct_betweenness": float(between.get(identity, 0.0)),
+                "tri_deg": float(tri[identity]["tri_deg"]),
+                "tri_eigen_cent": float(tri[identity]["tri_eigen_cent"]),
+                "tri_clus_coeff": float(tri[identity]["tri_clus_coeff"]),
+                "tri_discovery": int(tri[identity]["tri_discovery"]),
             }
         )
 
@@ -269,6 +303,15 @@ def main() -> int:
         writer.writerows(rows)
 
     summary = {
+        "formula_identity": "element-sorted normalized atomic fractions rounded to 12 decimal places",
+        "input_sha256": {
+            "features_pca": sha256_file(Path(args.features_pca)),
+            "sample_assignments": sha256_file(Path(args.sample_assignments)),
+            "icsd_index": sha256_file(Path(args.icsd_index)),
+            "tri_existing_materials": sha256_file(
+                Path(args.tri_dir) / "data" / "NetworkParams_ExistingMaterials_v1.1.json"
+            ),
+        },
         "n_formula_nodes": int(len(formulas)),
         "n_formula_edges": int(graph.number_of_edges()),
         "n_shared_formulas": int(len(rows)),

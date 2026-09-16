@@ -33,8 +33,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from frontier_common import require_zenodo_file
-
 
 # Distinct color per source; the ICSD-matched companion bar uses a
 # desaturated grey to keep the figure readable as the source count grows.
@@ -95,7 +93,7 @@ def render(summary: dict, out_fig: Path) -> None:
             ai_color = BASE_PALETTE[i % len(BASE_PALETTE)]
             # ICSD-matched bar at slot 2i, AI bar at slot 2i+1.
             for j, (role, color, key) in enumerate([
-                (f"ICSD ↔ {src_name}-matched", "#5b6672", "icsd_matched_to_source"),
+                ("ICSD (source-matched)", "#5b6672", "icsd_matched_to_source"),
                 (f"{src_name} (matched strata)", ai_color, "matched"),
             ]):
                 slot = 2 * i + j
@@ -125,7 +123,7 @@ def render(summary: dict, out_fig: Path) -> None:
 
         # Annotate per-source common-strata counts above each cutoff.
         for i_cut, r in enumerate(cutoff_results):
-            counts = " / ".join(
+            counts = "\n".join(
                 f"{src_name[:3]}={r['matchings'][matcher_name]['by_source'][src_name]['n_strata_common']}"
                 for src_name in source_names
             )
@@ -133,7 +131,7 @@ def render(summary: dict, out_fig: Path) -> None:
                     fontsize=7, color="#5b6672")
         ax.set_xticks(x)
         ax.set_xticklabels(cutoff_labels)
-        ax.set_xlabel("Training cutoff year")
+        ax.set_xlabel("Historical cutoff year")
         ax.set_title(f"{matcher_name} matching", fontsize=11,
                      fontweight="bold", pad=8)
         ax.set_ylim(0, 1.0)
@@ -143,14 +141,16 @@ def render(summary: dict, out_fig: Path) -> None:
         ax.spines["right"].set_visible(False)
 
     axes[0].set_ylabel("In-basin rate (95th-percentile threshold)")
-    axes[0].legend(loc="upper left", fontsize=7.5, frameon=False, ncol=1)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", fontsize=8,
+               frameon=False, ncol=3, bbox_to_anchor=(0.5, -0.005))
     fig.suptitle(
-        "Composition-matched in-basin rates: AI vs held-out ICSD",
+        "Composition-matched in-basin rates: external structures versus held-out ICSD",
         fontsize=12, fontweight="bold", y=0.99,
     )
 
     out_fig.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.tight_layout(rect=(0, 0.10, 1, 0.96))
     fig.savefig(out_fig, dpi=180, bbox_inches="tight")
     plt.close(fig)
     print(f"wrote figure to {out_fig}")
@@ -158,11 +158,7 @@ def render(summary: dict, out_fig: Path) -> None:
 
 def main() -> int:
     args = parse_args()
-    summary_path = require_zenodo_file(
-        args.summary,
-        what="composition-matched AI-vs-ICSD summary driving Extended Data Fig 2",
-    )
-    summary = json.loads(summary_path.read_text())
+    summary = json.loads(Path(args.summary).read_text())
     render(summary, Path(args.output))
     return 0
 

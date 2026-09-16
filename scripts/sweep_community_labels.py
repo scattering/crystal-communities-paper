@@ -8,11 +8,12 @@ Two changes vs v1:
      dominant anion is actually O.
 """
 from __future__ import annotations
+import os
 import csv, json, re, sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-REPO = Path("/work2/09870/williamratcliff/stampede3")
+REPO = Path(os.environ.get("CRYSTAL_COMMUNITIES_TACC_ROOT", os.environ.get("WORK", "/path/to/tacc/work")))  # TACC work root of the June 2026 runs
 LABELS3 = REPO / "icsd_graph_runs/full_matminer_ops_spr_20260419_labels3/community_assignments.csv"
 ICSD_INDEX = REPO / "reference_data/ICSD_index.csv"
 CANONICAL = REPO / "icsd_graph_runs/full_matminer_ops_spr_20260419_labels3/canonical_family_names_labels3.csv"

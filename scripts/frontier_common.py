@@ -35,51 +35,6 @@ from pathlib import Path
 import numpy as np
 
 
-def require_zenodo_file(path, what: str | None = None) -> Path:
-    """Verify a data input exists; raise FileNotFoundError with a Zenodo
-    pointer if not.
-
-    Use at the top of ``main()`` in figure / analysis scripts (right after
-    argparse + Path conversion) to give a reader a more actionable error
-    than a bare ``FileNotFoundError`` when they have not yet downloaded
-    the manuscript's Zenodo data bundle.
-
-    Parameters
-    ----------
-    path
-        The path to verify (``str`` or ``Path``).
-    what
-        Optional one-line description of the file's role, included in
-        the error message. Example: ``"the formula-overlap summary
-        driving Figure 4"``.
-
-    Returns
-    -------
-    Path
-        The verified path (same object, converted to ``Path``).
-
-    Raises
-    ------
-    FileNotFoundError
-        With a multi-line message pointing at the Zenodo bundle and
-        the README's "Zenodo data bundle required" section.
-    """
-    p = Path(path)
-    if p.exists():
-        return p
-    role = f"\n  ({what})" if what else ""
-    raise FileNotFoundError(
-        f"Required data file not found: {p}{role}\n\n"
-        f"This file is part of the Zenodo data bundle for the manuscript\n"
-        f"'Computed materials proposals depart from the structural\n"
-        f"memory of experimental discovery.' Download the bundle before\n"
-        f"running this script:\n\n"
-        f"    zenodo_get 10.5281/zenodo.20046302  # concept DOI, always points to latest version -o notes/\n\n"
-        f"See README.md → 'Zenodo data bundle required for figure\n"
-        f"reproduction' and docs/SCHEMA.md for the full file inventory."
-    )
-
-
 def parse_int(text: str) -> int | None:
     """Coerce a CSV cell to int, returning None on empty/garbage.
 
@@ -110,6 +65,7 @@ def load_community_rows(path: Path) -> list[dict[str, int | None]]:
     """Load (icsd_id, year, community) rows from the production CSV.
 
     Reads ``notes/icsd_community_assignments/community_assignments_labels3.csv``
+    (the superseded June 2026 partition; legacy helper)
     (the canonical 167.5K-entry table). Missing or malformed values are
     coerced to None rather than dropped, so downstream code can decide
     how to handle them.
@@ -179,3 +135,44 @@ def centroid_thresholds(
         within.append(d)
     threshold = float(np.quantile(within, 0.95)) if within else 0.0
     return np.array(communities, dtype=int), centroids, threshold
+
+
+def require_zenodo_file(path, what: str | None = None) -> Path:
+    """Verify a data input exists; raise FileNotFoundError with a Zenodo
+    pointer if not.
+
+    Use at the top of ``main()`` in figure / analysis scripts (right after
+    argparse + Path conversion) to give a reader a more actionable error
+    than a bare ``FileNotFoundError`` when they have not yet downloaded
+    the manuscript's Zenodo data bundle.
+
+    Parameters
+    ----------
+    path
+        The path to verify (``str`` or ``Path``).
+    what
+        Optional one-line description of the file's role, included in
+        the error message. Example: ``"the formula-overlap summary
+        driving Figure 4"``.
+
+    Returns
+    -------
+    Path
+        The verified path (same object, converted to ``Path``).
+
+    Raises
+    ------
+    FileNotFoundError
+        With a multi-line message pointing at the Zenodo bundle and
+        the README's "Zenodo data bundle required" section.
+    """
+    p = Path(path)
+    if p.exists():
+        return p
+    role = f"\n  ({what})" if what else ""
+    raise FileNotFoundError(
+        f"Required data file not found: {p}{role}\n\n"
+        "Use the version-matched repaired analysis and feature artifacts described in "
+        "docs/HOW_TO_REPRODUCE.md. The current repaired release is being prepared; "
+        "the latest published Zenodo version contains the earlier representation."
+    )

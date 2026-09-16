@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Five-source calibration figure for the Nature submission.
+"""Five-source calibration figure (legacy producer for the original submission;
+superseded by make_fig_5source_calibration_revised.py).
 
 Three panels in a single figure:
 
@@ -10,7 +11,7 @@ Three panels in a single figure:
       explicit highlight that GNoME ≈ MP-theoretical at every cutoff.
 
 Inputs:
-  --features features.npy (167500 x 213 raw matminer)
+  --features features.npy (N x 213 raw features; 167,500 rows in the original run)
   --gnome / --mattergen / --mp / --jarvis / --alexandria *records.csv
   --composition-matched-summary composition_matched_ai_summary.json
   --output output.png
@@ -30,8 +31,6 @@ import numpy as np
 from scipy.stats import gaussian_kde
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-
-from frontier_common import require_zenodo_file
 
 
 SOURCES_AI = [
@@ -66,8 +65,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output", required=True)
     p.add_argument("--seed", type=int, default=42)
     # Tuning knobs for the KDE topographical background (panels a + b).
-    # Each default is documented in paper/supporting_information.md §S1.5
-    # ("Visualization tuning parameters") with sensitivity bounds.
+    # Each default is documented in the Supporting Information (visualization
+    # parameters) with sensitivity bounds.
     p.add_argument(
         "--kde-grid", type=int, default=180,
         help="Per-axis grid resolution for KDE evaluation (default 180; "
@@ -234,11 +233,7 @@ def main() -> int:
     rng = np.random.default_rng(args.seed)
 
     print("loading ICSD features...", flush=True)
-    features_path = require_zenodo_file(
-        args.features,
-        what="frozen 167,500-row matminer feature matrix (features.npy)",
-    )
-    X = np.load(features_path)
+    X = np.load(args.features)
     Xs = StandardScaler().fit_transform(X)
     pca2 = PCA(n_components=2, random_state=args.seed)
     X2 = pca2.fit_transform(Xs)
@@ -246,11 +241,11 @@ def main() -> int:
 
     print("loading external records...", flush=True)
     src_paths = {
-        "GNoME": require_zenodo_file(args.gnome, what="GNoME frontier-records CSV"),
-        "MatterGen": require_zenodo_file(args.mattergen, what="MatterGen frontier-records CSV"),
-        "MP": require_zenodo_file(args.mp, what="MP-theoretical frontier-records CSV"),
-        "JARVIS": require_zenodo_file(args.jarvis, what="JARVIS-DFT frontier-records CSV"),
-        "Alexandria": require_zenodo_file(args.alexandria, what="Alexandria off-hull frontier-records CSV"),
+        "GNoME": Path(args.gnome),
+        "MatterGen": Path(args.mattergen),
+        "MP": Path(args.mp),
+        "JARVIS": Path(args.jarvis),
+        "Alexandria": Path(args.alexandria),
     }
     src_data = {}
     for name, p in src_paths.items():
@@ -259,11 +254,7 @@ def main() -> int:
         print(f"  {name}: {len(xy)} entries ({ol.sum()} frontier)", flush=True)
 
     print("loading composition-matched summary...", flush=True)
-    summary_path = require_zenodo_file(
-        args.composition_matched_summary,
-        what="composition-matched AI-vs-ICSD summary driving panel (c)",
-    )
-    summary = json.loads(summary_path.read_text())
+    summary = json.loads(Path(args.composition_matched_summary).read_text())
 
     print("rendering figure...", flush=True)
     fig = plt.figure(figsize=(13.5, 9.5), dpi=170)

@@ -14,8 +14,6 @@ import numpy as np
 import plotly.graph_objects as go
 from dash import Dash, Input, Output, dcc, html
 from pymatgen.core import Structure
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -49,20 +47,16 @@ _FIG_CANDIDATES = (
 )
 FIG_ROOT = next(
     (c for c in _FIG_CANDIDATES
-     if (c / "icsd_graph_view.html").exists() or any(c.glob("*frontier*.png"))),
+     if (c / "pipeline_schematic_repaired.png").exists()
+     or (c / "icsd_graph_view.html").exists() or any(c.glob("*frontier*.png"))),
     _FIG_CANDIDATES[-1],
 )
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.append(str(SCRIPTS_ROOT))
 
-from icsd_densify_worker import build_structure_embedding
-from analyze_alab_validation import (
-    centroid_thresholds,
-    load_community_metadata,
-    load_community_rows,
-    raw_accessibility,
-    zscore,
-)
+if str(APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(APP_ROOT))
+from frozen_backend import load_bundle, score as score_saved_structure
 
 
 def env_path(name: str, fallback: str = "") -> Path | None:
@@ -70,130 +64,11 @@ def env_path(name: str, fallback: str = "") -> Path | None:
     return Path(value) if value else None
 
 
-ICSD_FEATURES_PATH = env_path("ICSD_FEATURES_PATH")
-ICSD_COMMUNITY_ASSIGNMENTS_PATH = env_path("ICSD_COMMUNITY_ASSIGNMENTS_PATH")
-ICSD_NODE_EVENTS_PATH = env_path("ICSD_NODE_EVENTS_PATH")
-ICSD_PROTOTYPE_LABELS_PATH = env_path("ICSD_PROTOTYPE_LABELS_PATH")
-ICSD_CANONICAL_LABELS_PATH = env_path(
-    "ICSD_CANONICAL_LABELS_PATH",
-    str(REPO_ROOT / "notes" / "canonical_family_names_labels3.csv"),
-)
-ICSD_REPRESENTATIVES_PATH = env_path(
-    "ICSD_REPRESENTATIVES_PATH",
-    str(REPO_ROOT / "notes" / "functional_community_representatives_top20.csv"),
-)
-# Output of scripts/infer_community_families.py — heuristic textbook-family
-# names ("spinel", "olivine", "garnet", "delafossite", ...) for communities
-# whose top-20 members have a dominant (space group, stoichiometry class)
-# signature. Used as a fallback after canonical-family curation but before
-# the AflowPrototypeMatcher / CIF-systematic-name JSON, because the
-# inferred labels are far more chemically informative than e.g. the bare
-# stoichiometric "Y0.844Cu1.5Se2" that the prototype JSON usually returns.
-ICSD_INFERRED_FAMILIES_PATH = env_path(
-    "ICSD_INFERRED_FAMILIES_PATH",
-    str(REPO_ROOT / "notes" / "community_families_inferred.csv"),
-)
-# Optional graph-aware community layout from scripts/build_community_layout.py.
-# When set, the dedicated Community Map page draws centroids in this layout
-# instead of the raw PCA scatter so overlapping basins separate visually.
-ICSD_COMMUNITY_LAYOUT_PATH = env_path(
-    "ICSD_COMMUNITY_LAYOUT_PATH",
-    str(REPO_ROOT / "notes" / "community_layout.csv"),
-)
-# Optional directory of CIF files keyed by ICSD id (e.g. 153958.cif). When set,
-# the click-to-drill modal can render a 3Dmol.js view of the centroid CIF; when
-# unset, the modal degrades to the exemplar table only.
-ICSD_CIF_DIR = env_path("ICSD_CIF_DIR")
-DEMO_LOCAL_MODE = os.environ.get("ICSD_DEMO_LOCAL_MODE", "matminer_ops")
-DEMO_WL_ITERS = int(os.environ.get("ICSD_DEMO_WL_ITERS", "3"))
-DEMO_OBSERVATION_YEAR = int(os.environ.get("ICSD_DEMO_OBSERVATION_YEAR", "2025"))
+DASHBOARD_MANIFEST_PATH = env_path("ICSD_DASHBOARD_MANIFEST")
+ICSD_CIF_DIR = None  # Public dashboard does not expose licensed ICSD structures.
+DEMO_OBSERVATION_YEAR = int(os.environ.get("ICSD_DEMO_OBSERVATION_YEAR", "2019"))
 DEMO_SAMPLE_SIZE = int(os.environ.get("ICSD_DEMO_SAMPLE_SIZE", "12000"))
-DEMO_RANDOM_SEED = int(os.environ.get("ICSD_DEMO_RANDOM_SEED", "42"))
-
-
-def load_canonical_label_records(path: Path | None) -> dict[int, dict[str, str]]:
-    """Return {community_id: {label, confidence, evidence, notes, raw_label,
-    centroid_icsd_id}} for graph_community rows that have a canonical name.
-
-    Empty / sentinel canonical names ("", "unknown", "n/a") are dropped — those
-    communities will fall through to the prototype-matcher label and finally to
-    "community N" via resolve_community_label().
-    """
-    if path is None or not path.exists():
-        return {}
-    out: dict[int, dict[str, str]] = {}
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        for row in reader:
-            if (row.get("kind") or "").strip() != "graph_community":
-                continue
-            label = (row.get("canonical_family_name") or "").strip()
-            if not label or label.lower() in {"unknown", "n/a"}:
-                continue
-            try:
-                comm = int(row["id"])
-            except (TypeError, ValueError):
-                continue
-            out[comm] = {
-                "label": label,
-                "confidence": (row.get("confidence") or "").strip(),
-                "evidence": (row.get("evidence") or "").strip(),
-                "notes": (row.get("notes") or "").strip(),
-                "raw_label": (row.get("raw_label") or "").strip(),
-                "centroid_icsd_id": (row.get("centroid_icsd_id") or "").strip(),
-            }
-    return out
-
-
-def load_canonical_label_map(path: Path | None) -> dict[int, str]:
-    """Convenience: just the {community: canonical_name} map."""
-    return {c: rec["label"] for c, rec in load_canonical_label_records(path).items()}
-
-
-def load_inferred_family_map(path: Path | None) -> dict[int, str]:
-    """Load community_families_inferred.csv (output of
-    scripts/infer_community_families.py). Returns {community: inferred_family}
-    for rows where inferred_family is non-empty. Rows with no dominant
-    signature are silently skipped — those communities will fall through to
-    the prototype-matcher label."""
-    if path is None or not path.exists():
-        return {}
-    out: dict[int, str] = {}
-    with path.open(newline="", encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            label = (row.get("inferred_family") or "").strip()
-            if not label:
-                continue
-            try:
-                comm = int(row["community"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            out[comm] = label
-    return out
-
-
-def load_prototype_label_map(path: Path | None) -> dict[int, str]:
-    """Load community_prototype_labels.json (the AflowPrototypeMatcher /
-    systematic-name fallback emitted by icsd_graph_community_postprocess).
-    Returns {community: label}."""
-    if path is None or not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    out: dict[int, str] = {}
-    if not isinstance(data, list):
-        return out
-    for row in data:
-        try:
-            comm = int(row["community"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        label = (row.get("label") or "").strip()
-        if label:
-            out[comm] = label
-    return out
+DEMO_RANDOM_SEED = 42
 
 
 def resolve_community_label(
@@ -202,17 +77,7 @@ def resolve_community_label(
     prototype: dict[int, str],
     inferred: dict[int, str] | None = None,
 ) -> str:
-    """Single source of truth for community labels everywhere in the dashboard.
-
-    Order: canonical curated family name → heuristic textbook-family inference
-    (community_families_inferred.csv) → prototype-matcher label (AflowPrototype
-    name when available, else the CIF systematic name, else the raw
-    stoichiometric formula) → 'community N' as last resort. The heuristic
-    inference is preferred over the prototype JSON because labels like
-    "spinel (MgAl2O4-type)" are far more chemically informative than the bare
-    stoichiometric formulas (e.g. "Y0.844Cu1.5Se2") the prototype matcher
-    typically returns.
-    """
+    """Use only descriptions supplied by the validated repaired bundle."""
     canon = canonical.get(comm)
     if canon:
         return canon
@@ -251,46 +116,9 @@ def load_community_layout(path: Path | None) -> dict[int, dict[str, float]]:
     return out
 
 
-def load_representatives(path: Path | None, top_k: int = 10) -> dict[int, list[dict[str, str]]]:
-    """Load top-k centroid-nearest exemplars per community from the CSV emitted
-    by extract_functional_community_representatives.py. Rows are sorted by
-    rank_by_centroid_distance ascending. Returns {community: [exemplar, ...]}.
-    """
-    if path is None or not path.exists():
-        return {}
-    out: dict[int, list[dict[str, str]]] = {}
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        for row in reader:
-            try:
-                comm = int(row["community"])
-                rank = int(row["rank_by_centroid_distance"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if rank > top_k:
-                continue
-            out.setdefault(comm, []).append({
-                "rank": rank,
-                "icsd_id": (row.get("icsd_id") or "").strip(),
-                "name": (row.get("name") or "").strip(),
-                "publication_year": (row.get("publication_year") or "").strip(),
-                "sym_group": (row.get("sym_group") or "").strip(),
-                "Bravais": (row.get("Bravais") or "").strip(),
-                "centroid_distance": (row.get("centroid_distance") or "").strip(),
-                "a": (row.get("a") or "").strip(),
-                "b": (row.get("b") or "").strip(),
-                "c": (row.get("c") or "").strip(),
-            })
-    for comm in out:
-        out[comm].sort(key=lambda r: r["rank"])
-    return out
-
-
 @dataclass
 class FrozenMap:
-    scaler: StandardScaler
-    pca32: PCA
-    pca2: PCA
+    bundle: dict
     communities: np.ndarray
     centroids: np.ndarray
     centroids_xy: np.ndarray
@@ -326,9 +154,16 @@ class FrozenMap:
         return "fallback"
 
 
-APP_STATUS = "ready"
-if not all([ICSD_FEATURES_PATH, ICSD_COMMUNITY_ASSIGNMENTS_PATH, ICSD_NODE_EVENTS_PATH]):
-    APP_STATUS = "missing_paths"
+APP_STATUS = "missing_paths"
+APP_STATUS_ERROR = ""
+FROZEN_BUNDLE = None
+if DASHBOARD_MANIFEST_PATH is not None:
+    try:
+        FROZEN_BUNDLE = load_bundle(DASHBOARD_MANIFEST_PATH)
+        APP_STATUS = "ready"
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        APP_STATUS = "incompatible_features"
+        APP_STATUS_ERROR = str(exc)
 
 
 def image_data_uri(path: Path) -> str | None:
@@ -349,29 +184,26 @@ def image_data_uri(path: Path) -> str | None:
 
 
 FIGURES = {
-    "graph_time_ratios": FIG_ROOT / "graph_time_ratios.png",
-    "prototype_collapse": FIG_ROOT / "prototype_collapse_space_groups.png",
-    "stepping_stone": FIG_ROOT / "tri_stepping_stone_counts.png",
-    # gnome_frontier_pca_labeled.png is a relabeled overlay of the original
-    # script output: it adds the missing "Human (ICSD background)" legend entry
-    # and an AI-vs-Human title. Regenerated by tools/patch_gnome_legend.py
-    # (or implicitly by re-running analyze_gnome_frontier.py once that script
-    # is also re-rendered with the updated plot_frontier labels).
-    "gnome_frontier": FIG_ROOT / "gnome_frontier_pca_labeled.png",
-    "graph_growth_gif": FIG_ROOT / "icsd_graph_growth.gif",
+    "graph_time_ratios": FIG_ROOT / "temporal_cliff_stacked_area_repaired.png",
+    "prototype_collapse": FIG_ROOT / "pipeline_schematic_repaired.png",
+    "stepping_stone": FIG_ROOT / "formula_graph_tri_comparison_repaired.png",
+    "gnome_frontier": FIG_ROOT / "fig3_5source_calibration_repaired.png",
+    "graph_growth_gif": FIG_ROOT / "synth_prior_quadrant_repaired.png",
 }
+if FROZEN_BUNDLE is not None:
+    FIGURES = {key: FROZEN_BUNDLE["paths"][f"figure_{key}"] for key in FIGURES}
 
+# Legacy precomputed viewers contain obsolete coordinates and labels. The live
+# community-map route uses only the validated repaired artifact bundle.
 INTERACTIVE_VIEWERS = {
-    "graph_view_html": FIG_ROOT / "icsd_graph_view.html",
-    "connectivity_view_html": FIG_ROOT / "icsd_graph_connectivity_view_labels4.html",
+    "graph_view_html": FIG_ROOT / "icsd_graph_view_repaired.html",
+    "connectivity_view_html": FIG_ROOT / "icsd_graph_connectivity_view_repaired.html",
 }
-
-
 METRICS = [
-    ("167,500", "ICSD entries featurized in production (92.4% of 181,362 requested; 4.8% pymatgen CIF parser failures, 2.8% over the 256-site cap)"),
-    ("44.2", "Mean space groups absorbed by the ten largest continuous basins"),
-    ("82.9%", "New formulas joining existing communities (TRI-shared subset: 13,739 of 16,582 classifiable formulas in the Aykol-2019 thermodynamic-stability network)"),
-    ("Humans > MatterGen > GNoME", "Stable held-out frontier ordering across historical cutoffs"),
+    ("167,392", "ICSD entries encoded with CrystalWeave (92.3% of 181,362 requested)"),
+    ("99.3", "Mean distinct space groups in the ten largest communities"),
+    ("91.8%", "TRI-shared formulas entering existing communities (16,112 of 17,556 classifiable formulas)"),
+    ("Five computed cohorts", "Held-out ICSD has a higher in-basin rate in independently trained historical CrystalWeave maps"),
 ]
 
 
@@ -487,7 +319,7 @@ def figure_card(
 def config_hint() -> html.Div:
     if APP_STATUS == "ready":
         return html.Div(
-            "Frozen-map paths detected. Upload scoring is enabled.",
+            f"Verified repaired map loaded. Historical cost uses observation year {DEMO_OBSERVATION_YEAR}. Upload scoring is enabled.",
             style={
                 "padding": "14px 16px",
                 "borderRadius": "14px",
@@ -499,9 +331,13 @@ def config_hint() -> html.Div:
         )
     return html.Div(
         [
-            html.Div("Frozen-map scoring is not configured yet.", style={"fontWeight": "700", "marginBottom": "6px"}),
             html.Div(
-                "Set ICSD_FEATURES_PATH, ICSD_COMMUNITY_ASSIGNMENTS_PATH, and ICSD_NODE_EVENTS_PATH in the app environment to enable upload scoring. ICSD_PROTOTYPE_LABELS_PATH is optional but recommended — it surfaces AflowPrototype / CIF systematic names for communities that don't yet have a curated canonical name.",
+                "Frozen-map scoring requires compatible ICSD features."
+                if APP_STATUS_ERROR else "Frozen-map scoring is not configured yet.",
+                style={"fontWeight": "700", "marginBottom": "6px"},
+            ),
+            html.Div(
+                APP_STATUS_ERROR or "Set ICSD_DASHBOARD_MANIFEST to the verified repaired artifact manifest to enable scoring.",
                 style={"lineHeight": "1.55"},
             ),
         ],
@@ -518,86 +354,51 @@ def config_hint() -> html.Div:
 
 @lru_cache(maxsize=1)
 def load_frozen_map() -> FrozenMap:
-    if APP_STATUS != "ready":
-        raise RuntimeError("Frozen-map paths are not configured.")
-    X = np.load(ICSD_FEATURES_PATH)
-    community_rows = load_community_rows(ICSD_COMMUNITY_ASSIGNMENTS_PATH)
-    if len(X) != len(community_rows):
-        raise ValueError(f"ICSD features rows ({len(X)}) != community rows ({len(community_rows)})")
-
-    community_labels = [int(r["community"]) if r["community"] is not None else -1 for r in community_rows]
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X)
-    pca32 = PCA(n_components=min(32, Xs.shape[0], Xs.shape[1]), random_state=DEMO_RANDOM_SEED)
-    Xp = pca32.fit_transform(Xs)
-    communities, centroids, thresholds = centroid_thresholds(Xp, community_labels)
-    community_meta, mu, sigma = load_community_metadata(ICSD_COMMUNITY_ASSIGNMENTS_PATH, ICSD_NODE_EVENTS_PATH)
-    canonical_records = load_canonical_label_records(ICSD_CANONICAL_LABELS_PATH)
-    canonical_labels = {c: rec["label"] for c, rec in canonical_records.items()}
-    inferred_labels = load_inferred_family_map(ICSD_INFERRED_FAMILIES_PATH)
-    prototype_labels = load_prototype_label_map(ICSD_PROTOTYPE_LABELS_PATH)
-    representatives = load_representatives(ICSD_REPRESENTATIVES_PATH, top_k=10)
-    community_layout = load_community_layout(ICSD_COMMUNITY_LAYOUT_PATH)
-
-    valid_idx = np.where(np.asarray(community_labels) >= 0)[0]
+    if APP_STATUS != "ready" or FROZEN_BUNDLE is None:
+        raise RuntimeError(APP_STATUS_ERROR or "A repaired dashboard manifest is required.")
+    bundle = FROZEN_BUNDLE
+    basis = bundle["basis"]
+    communities = basis["communities"]
+    centroids = basis["centroids"]
+    labels = bundle["labels"]
+    thresholds = {int(c): float(t) for c, t in zip(communities, basis["p95"])}
+    community_meta = {int(c): {"size": int(n), "birth_year": int(y), "core_threshold": float(t)}
+                      for c, n, y, t in zip(communities, basis["counts"], basis["birth_years"], basis["p50"])}
+    canonical_records = {}
+    for group in bundle["families"]["groups"]:
+        for c in group["communities"]:
+            canonical_records[int(c)] = {"label": group["name"], "confidence": "descriptive",
+                                         "evidence": group.get("space_group_evidence", ""),
+                                         "notes": group["label_status"], "centroid_icsd_id": ""}
+    canonical_labels = {c: r["label"] for c, r in canonical_records.items()}
+    representatives = {}
+    for row in bundle["representatives"]:
+        c, rank = int(row["community"]), int(row["rank_by_centroid_distance"])
+        if rank <= 10:
+            representatives.setdefault(c, []).append({"rank": rank, "icsd_id": row["icsd_id"],
+                "name": row["reduced_formula"], "publication_year": row["year"],
+                "sym_group": row["space_group"], "Bravais": "", "centroid_distance": row["centroid_distance"],
+                "a": "", "b": "", "c": ""})
+    community_layout = load_community_layout(bundle["paths"]["layout"])
+    valid_idx = np.flatnonzero(labels >= 0)
     rng = np.random.default_rng(DEMO_RANDOM_SEED)
-    if len(valid_idx) > DEMO_SAMPLE_SIZE:
-        sample_idx = np.sort(rng.choice(valid_idx, size=DEMO_SAMPLE_SIZE, replace=False))
-    else:
-        sample_idx = valid_idx
-
-    pca2 = PCA(n_components=2, random_state=DEMO_RANDOM_SEED)
-    background_xy = pca2.fit_transform(Xp[sample_idx])
-    background_comm = np.asarray([community_labels[i] for i in sample_idx], dtype=int)
-    centroids_xy = pca2.transform(centroids)
-
-    background_birth = np.array(
-        [
-            float(community_meta.get(int(c), {}).get("birth_year", 2010.0))
-            for c in background_comm
-        ],
-        dtype=float,
-    )
-    background_label = [
-        resolve_community_label(int(c), canonical_labels, prototype_labels, inferred_labels)
-        for c in background_comm
-    ]
-
-    pad_x = 0.05 * (float(np.ptp(background_xy[:, 0])) or 1.0)
-    pad_y = 0.05 * (float(np.ptp(background_xy[:, 1])) or 1.0)
-    background_xlim = (
-        float(background_xy[:, 0].min() - pad_x),
-        float(background_xy[:, 0].max() + pad_x),
-    )
-    background_ylim = (
-        float(background_xy[:, 1].min() - pad_y),
-        float(background_xy[:, 1].max() + pad_y),
-    )
-
-    return FrozenMap(
-        scaler=scaler,
-        pca32=pca32,
-        pca2=pca2,
-        communities=communities,
-        centroids=centroids,
-        centroids_xy=centroids_xy,
-        thresholds=thresholds,
-        community_meta=community_meta,
-        canonical_labels=canonical_labels,
-        canonical_records=canonical_records,
-        inferred_labels=inferred_labels,
-        prototype_labels=prototype_labels,
-        representatives=representatives,
-        community_layout=community_layout,
-        accessibility_mu=mu,
-        accessibility_sigma=sigma,
-        background_xy=background_xy,
-        background_comm=background_comm,
-        background_birth=background_birth,
-        background_label=background_label,
-        background_xlim=background_xlim,
-        background_ylim=background_ylim,
-    )
+    sample_idx = (np.sort(rng.choice(valid_idx, size=DEMO_SAMPLE_SIZE, replace=False))
+                  if len(valid_idx) > DEMO_SAMPLE_SIZE else valid_idx)
+    background_xy = np.asarray(bundle["pca"][sample_idx, :2])
+    background_comm = labels[sample_idx]
+    background_birth = np.array([community_meta[int(c)]["birth_year"] for c in background_comm])
+    background_label = [canonical_labels.get(int(c), f"community {c}") for c in background_comm]
+    pads = .05 * np.maximum(np.ptp(background_xy, axis=0), 1.)
+    moments = bundle["accessibility"]
+    return FrozenMap(bundle=bundle, communities=communities, centroids=centroids,
+        centroids_xy=centroids[:, :2], thresholds=thresholds, community_meta=community_meta,
+        canonical_labels=canonical_labels, canonical_records=canonical_records,
+        inferred_labels={}, prototype_labels={}, representatives=representatives,
+        community_layout=community_layout, accessibility_mu=moments["icsd_raw_mu"],
+        accessibility_sigma=moments["icsd_raw_sigma"], background_xy=background_xy,
+        background_comm=background_comm, background_birth=background_birth, background_label=background_label,
+        background_xlim=(float(background_xy[:, 0].min()-pads[0]), float(background_xy[:, 0].max()+pads[0])),
+        background_ylim=(float(background_xy[:, 1].min()-pads[1]), float(background_xy[:, 1].max()+pads[1])))
 
 
 def parse_upload(contents: str) -> Structure:
@@ -615,57 +416,30 @@ def structure_formula(structure: Structure) -> str:
 
 def score_structure(structure: Structure) -> dict[str, Any]:
     fmap = load_frozen_map()
-    embedding = build_structure_embedding(
-        structure,
-        wl_iters=DEMO_WL_ITERS,
-        local_mode=DEMO_LOCAL_MODE,
-    )
-    Ys = fmap.scaler.transform(np.asarray(embedding, dtype=float).reshape(1, -1))
-    Yp = fmap.pca32.transform(Ys)[0]
-    dists = np.linalg.norm(fmap.centroids - Yp[None, :], axis=1)
-    idx = int(np.argmin(dists))
-    comm = int(fmap.communities[idx])
-    dist = float(dists[idx])
-    threshold = float(fmap.thresholds.get(comm, 0.0))
-    meta = fmap.community_meta.get(comm)
-    if meta is None:
-        raise RuntimeError(f"Missing community metadata for {comm}")
-    age = DEMO_OBSERVATION_YEAR - meta["birth_year"]
-    raw = raw_accessibility(dist, meta["core_threshold"], meta["size"], age)
-    score = float(zscore(raw, fmap.accessibility_mu, fmap.accessibility_sigma))
-    xy = fmap.pca2.transform(Yp.reshape(1, -1))[0]
-    centroid_xy = fmap.centroids_xy[idx]
-    family_name = fmap.label(comm)
-    label_source = fmap.label_source(comm)
-    canonical_record = fmap.canonical_records.get(comm)
-    return {
-        "formula": structure_formula(structure),
-        "n_sites": len(structure),
-        "community": comm,
-        "community_label": family_name,
-        "label_source": label_source,
-        "canonical_confidence": (canonical_record or {}).get("confidence", ""),
-        "canonical_evidence": (canonical_record or {}).get("evidence", ""),
-        "centroid_icsd_id": (canonical_record or {}).get("centroid_icsd_id", ""),
-        "distance": dist,
-        "threshold": threshold,
-        "frontier": bool(dist > threshold),
-        "structural_match_tier": (
-            "VERY HIGH" if dist <= 0.5
-            else "HIGH" if dist <= threshold
-            else "NEAR" if dist <= 2.0 * threshold
-            else "DISTANT"
-        ),
-        "small_community_caveat": bool(int(meta["size"]) < 20 or threshold < 0.1),
-        "accessibility": score,
-        "community_size": int(meta["size"]),
-        "community_birth_year": int(meta["birth_year"]),
-        "xy": xy,
-        "centroid_xy": centroid_xy,
-    }
+    result = score_saved_structure(structure, fmap.bundle, DEMO_OBSERVATION_YEAR)
+    comm = result["community"]
+    record = fmap.canonical_records.get(comm, {})
+    result.update(community_label=fmap.label(comm), label_source=fmap.label_source(comm),
+                  canonical_confidence=record.get("confidence", ""),
+                  canonical_evidence=record.get("evidence", ""), centroid_icsd_id="")
+    return result
+
+
+def year_text(year) -> str:
+    return str(int(year)) if year is not None and year >= 0 else "unknown"
+
+
+def birth_colors(years):
+    return [float(y) if y is not None and y >= 0 else "#aaaaaa" for y in years]
+
+
+def birth_min(years):
+    known = [float(y) for y in years if y is not None and y >= 0]
+    return min(known) if known else 1900.0
 
 
 def summary_panel(result: dict[str, Any]) -> html.Div:
+    birth_note = (f"First observed in {result['community_birth_year']}." if result["community_birth_year"] >= 0 else "Birth year unavailable; the cost uses the production age fallback of 2010.")
     frontier_label = "Frontier-like" if result["frontier"] else "In-basin"
     frontier_color = "#8a2f2f" if result["frontier"] else "#0f6d61"
     label_source = result.get("label_source", "fallback")
@@ -678,13 +452,13 @@ def summary_panel(result: dict[str, Any]) -> html.Div:
         elif canonical_conf == "low":
             source_text, source_color = "Curated (low confidence)", "#b56200"
         else:
-            source_text, source_color = "Curated", "#0f6d61"
+            source_text, source_color = "Checked community description", "#0f6d61"
     elif label_source == "inferred":
         source_text, source_color = "Inferred textbook family (heuristic)", "#34915d"
     elif label_source == "prototype":
         source_text, source_color = "Prototype matcher / CIF systematic name", "#5b6672"
     else:
-        source_text, source_color = "No prototype assigned", "#5b6672"
+        source_text, source_color = "No checked family description", "#5b6672"
     return html.Div(
         [
             html.Div(
@@ -721,66 +495,25 @@ def summary_panel(result: dict[str, Any]) -> html.Div:
                                     "fontWeight": "700",
                                 },
                             ),
-                            html.Span(
-                                f"Structural match: {result['structural_match_tier']}",
-                                title=(
-                                    "VERY HIGH: distance ≤ 0.5 in absolute terms — near-textbook structural identity. "
-                                    "HIGH: within the community's 95th-percentile threshold (strict in-basin per the paper's definition). "
-                                    "NEAR: just outside the basin envelope (up to 2× threshold). "
-                                    "DISTANT: meaningfully outside."
-                                ),
-                                style={
-                                    "display": "inline-block",
-                                    "padding": "6px 10px",
-                                    "borderRadius": "999px",
-                                    "background": "rgba(255,255,255,0.82)",
-                                    "border": "1px solid #355ea0",
-                                    "color": "#355ea0",
-                                    "fontWeight": "700",
-                                    "cursor": "help",
-                                },
-                            ),
+
                         ],
                         style={"marginTop": "10px"},
                     ),
-                    (
-                        html.Div(
-                            (
-                                f"⚠ Small-community caveat: nearest community has only "
-                                f"{result['community_size']} members, so its 95th-percentile threshold has "
-                                f"collapsed to {result['threshold']:.3f} as a statistical artifact of the small "
-                                f"sample. The distance of {result['distance']:.3f} is small in absolute terms — "
-                                f"your structure is essentially identical to the existing members of this "
-                                f"community. Treat as near-textbook structural identity even if the strict "
-                                f"95th-percentile in-basin classification falls just outside."
-                            ),
-                            style={
-                                "marginTop": "10px",
-                                "padding": "8px 12px",
-                                "background": "rgba(255, 245, 220, 0.7)",
-                                "border": "1px solid #c89132",
-                                "borderRadius": "8px",
-                                "color": "#5b3a00",
-                                "fontSize": "0.82rem",
-                                "lineHeight": "1.45",
-                            },
-                        )
-                        if result.get("small_community_caveat") else None
-                    ),
+
                 ],
                 style={"marginBottom": "14px"},
             ),
             html.Div(
                 [
                     metric_card(f"{result['community']}", "Nearest structural basin"),
-                    metric_card(f"{result['accessibility']:.2f}", "Accessibility score A_i"),
+                    metric_card(f"{result['accessibility']:.2f}", "Historical accessibility cost A_i"),
                     metric_card(f"{result['distance']:.3f}", "Centroid distance"),
                     metric_card(f"{result['threshold']:.3f}", "Community p95 threshold"),
                 ],
                 style={"display": "grid", "gridTemplateColumns": "repeat(2, minmax(0, 1fr))", "gap": "12px"},
             ),
             html.Div(
-                f"Community size {result['community_size']} and first observed around {result['community_birth_year']}. Uploaded structure has {result['n_sites']} sites.",
+                f"Community size {result['community_size']}. {birth_note} Uploaded structure has {result['n_sites']} sites. Cost evaluated at {result['observation_year']}; it is not a calibrated synthesis-success score. Community membership does not establish atomic-prototype identity.",
                 style={"marginTop": "16px", "color": "#5b6672", "lineHeight": "1.55"},
             ),
         ],
@@ -812,9 +545,9 @@ def placement_figure(result: dict[str, Any] | None) -> go.Figure:
             mode="markers",
             marker={
                 "size": 4,
-                "color": fmap.background_birth,
+                "color": birth_colors(fmap.background_birth),
                 "colorscale": "Viridis",
-                "cmin": float(fmap.background_birth.min()),
+                "cmin": birth_min(fmap.background_birth),
                 "cmax": float(fmap.background_birth.max()),
                 "opacity": 0.45,
                 "colorbar": {
@@ -825,7 +558,7 @@ def placement_figure(result: dict[str, Any] | None) -> go.Figure:
                 },
             },
             text=[
-                f"{lbl}<br>community {int(c)}<br>birth ~{int(b)}"
+                f"{lbl}<br>community {int(c)}<br>birth ~{year_text(b)}"
                 for lbl, c, b in zip(fmap.background_label, fmap.background_comm, fmap.background_birth)
             ],
             # plain python int list, not a numpy array — Plotly otherwise
@@ -860,7 +593,7 @@ def placement_figure(result: dict[str, Any] | None) -> go.Figure:
     centroid_marker_size = 9.0 + 9.0 * (log_sizes - log_sizes.min()) / max(log_sizes.max() - log_sizes.min(), 1e-6)
     centroid_text = [
         f"<b>{fmap.label(int(c))}</b><br>community {int(c)}<br>"
-        f"size {int(centroid_size[i])} | birth ~{int(centroid_birth[i])}"
+        f"size {int(centroid_size[i])} | birth ~{year_text(centroid_birth[i])}"
         f"<br><i>click to drill down</i>"
         for i, c in enumerate(fmap.communities)
     ]
@@ -871,9 +604,9 @@ def placement_figure(result: dict[str, Any] | None) -> go.Figure:
             mode="markers",
             marker={
                 "size": centroid_marker_size,
-                "color": centroid_birth,
+                "color": birth_colors(centroid_birth),
                 "colorscale": "Viridis",
-                "cmin": float(fmap.background_birth.min()),
+                "cmin": birth_min(fmap.background_birth),
                 "cmax": float(fmap.background_birth.max()),
                 "opacity": 0.85,
                 "line": {"width": 1.0, "color": "white"},
@@ -941,7 +674,7 @@ def placement_figure(result: dict[str, Any] | None) -> go.Figure:
                     hovertemplate=(
                         f"{result.get('community_label', 'community ' + str(comm))}<br>"
                         f"community {comm}<br>"
-                        f"birth {result['community_birth_year']}<br>"
+                        f"birth {year_text(result['community_birth_year'])}<br>"
                         f"size {result['community_size']}<br>"
                         f"<i>click to drill down</i><extra></extra>"
                     ),
@@ -1020,7 +753,7 @@ def unconfigured_figure(
 ) -> go.Figure:
     """Informative empty-state for the frozen-map-backed plots.
 
-    In ``missing_paths`` mode (no ICSD_FEATURES_PATH etc.) these plots
+    Without a verified dashboard manifest these plots
     have no data. Returning a bare ``go.Figure()`` looks broken; this
     renders a centred explanation instead.
     """
@@ -1031,9 +764,11 @@ def unconfigured_figure(
         annotations=[
             {
                 "text": (
+                    f"{what} requires ICSD features matching the active encoder.<br>"
+                    "Regenerate the features and frozen basis, then reload."
+                ) if APP_STATUS_ERROR else (
                     f"{what} needs the frozen-map data bundle.<br>"
-                    "Set ICSD_FEATURES_PATH, ICSD_COMMUNITY_ASSIGNMENTS_PATH "
-                    "and ICSD_NODE_EVENTS_PATH<br>to point at the Zenodo "
+                    "Set ICSD_DASHBOARD_MANIFEST<br>to the verified repaired "
                     "data bundle, then reload."
                 ),
                 "xref": "paper",
@@ -1082,6 +817,10 @@ def community_sunburst_figure(top_individual_buckets: int = 25) -> go.Figure:
     def comm_birth(c: int) -> float:
         return float(fmap.community_meta.get(c, {}).get("birth_year", 2010.0))
 
+    def weighted_birth(communities):
+        known = [c for c in communities if comm_birth(c) >= 0]
+        return (sum(comm_birth(c) * comm_size(c) for c in known) / sum(comm_size(c) for c in known)) if known else None
+
     rows: list[dict[str, Any]] = []  # {id, label, parent, value, color, hover}
 
     # Compute total first so the root and family slices have proper sums
@@ -1112,7 +851,7 @@ def community_sunburst_figure(top_individual_buckets: int = 25) -> go.Figure:
             "label": family,
             "parent": "root",
             "value": family_totals[family],
-            "color": sum(comm_birth(c) * comm_size(c) for c in children) / max(family_totals[family], 1),
+            "color": weighted_birth(children),
             "hover": f"<b>{family}</b><br>{len(children)} communities · {family_totals[family]} structures",
         })
         for c in sorted(children, key=lambda x: -comm_size(x)):
@@ -1122,13 +861,13 @@ def community_sunburst_figure(top_individual_buckets: int = 25) -> go.Figure:
                 "parent": family_id,
                 "value": comm_size(c),
                 "color": comm_birth(c),
-                "hover": f"<b>{family}</b><br>community {c}<br>size {comm_size(c)} · birth ~{int(comm_birth(c))}",
+                "hover": f"<b>{family}</b><br>community {c}<br>size {comm_size(c)} · birth ~{year_text(comm_birth(c))}",
             })
 
     if uncategorized:
         unc_id = "family:__uncategorized__"
         unc_birth = (
-            sum(comm_birth(c) * comm_size(c) for c in uncategorized) / max(unc_total, 1)
+            weighted_birth(uncategorized)
         )
         rows.append({
             "id": unc_id,
@@ -1148,10 +887,10 @@ def community_sunburst_figure(top_individual_buckets: int = 25) -> go.Figure:
                 "parent": unc_id,
                 "value": comm_size(c),
                 "color": comm_birth(c),
-                "hover": f"community {c}<br>{fmap.label(c)}<br>size {comm_size(c)} · birth ~{int(comm_birth(c))}",
+                "hover": f"community {c}<br>{fmap.label(c)}<br>size {comm_size(c)} · birth ~{year_text(comm_birth(c))}",
             })
         if roll:
-            roll_birth = sum(comm_birth(c) * comm_size(c) for c in roll) / max(roll_total, 1)
+            roll_birth = weighted_birth(roll)
             rows.append({
                 "id": "comm:__rollup__",
                 "label": f"smaller uncategorised (n={len(roll)})",
@@ -1167,10 +906,10 @@ def community_sunburst_figure(top_individual_buckets: int = 25) -> go.Figure:
     hover = [r["hover"] for r in rows]
     ids = [r["id"] for r in rows]
     color_vals = [r["color"] for r in rows]
-    valid_colors = [c for c in color_vals if c is not None]
+    valid_colors = [c for c in color_vals if c is not None and c >= 0]
     cmin = float(min(valid_colors)) if valid_colors else 1900.0
     cmax = float(max(valid_colors)) if valid_colors else 2025.0
-    colors_for_marker = [float(c) if c is not None else cmin for c in color_vals]
+    colors_for_marker = birth_colors(color_vals)
 
     fig = go.Figure(
         go.Sunburst(
@@ -1308,7 +1047,7 @@ def community_map_figure(min_size: int = 200, label_top_n: int = 25) -> go.Figur
 
     fallback_note = '<br><span style="color:#b56200">[PCA fallback — below layout min size]</span>'
     hover_text = [
-        f"<b>{fmap.label(c)}</b><br>community {c}<br>size {int(sizes[i])} | birth ~{int(births[i])}"
+        f"<b>{fmap.label(c)}</b><br>community {c}<br>size {int(sizes[i])} | birth ~{year_text(births[i])}"
         + ("" if in_layout_mask[i] else fallback_note)
         + "<br><i>click to drill down</i>"
         for i, c in enumerate(comm_ids)
@@ -1338,9 +1077,9 @@ def community_map_figure(min_size: int = 200, label_top_n: int = 25) -> go.Figur
             mode=marker_mode,
             marker={
                 "size": marker_size,
-                "color": births,
+                "color": birth_colors(births),
                 "colorscale": "Viridis",
-                "cmin": float(births.min()) if len(births) else 1900.0,
+                "cmin": birth_min(births),
                 "cmax": float(births.max()) if len(births) else 2025.0,
                 "opacity": point_opacity,
                 "line": {"width": 1.2, "color": "white"},
@@ -1369,7 +1108,7 @@ def community_map_figure(min_size: int = 200, label_top_n: int = 25) -> go.Figur
         annotations=[{
             "text": (
                 "graph-aware layout (k-NN spring layout)" if using_graph_layout
-                else "fallback PCA layout — set ICSD_COMMUNITY_LAYOUT_PATH for the graph-aware view"
+                else "saved PCA display for communities outside the graph-layout size cutoff"
             ),
             "xref": "paper", "yref": "paper", "x": 0.0, "y": 1.04,
             "xanchor": "left", "yanchor": "bottom",
@@ -1437,7 +1176,7 @@ def overview_layout() -> html.Div:
                 [
                     html.H2("Forest of structural communities", style={"margin": "0 0 8px"}),
                     html.P(
-                        "Each curated family is one slice; uncategorised communities are bucketed at the bottom. Slice value is community size; color is birth year. Click a slice to drill into it. Use the Community Map page for the spatial view.",
+                        "Each curated family is one slice; uncategorised communities are bucketed at the bottom. Slice value is community size; color is known birth year (grey when unavailable). Click a slice to drill into it. Use the Community Map page for the spatial view.",
                         style={"margin": "0 0 18px", "color": "#5b6672", "lineHeight": "1.55"},
                     ),
                     dcc.Graph(
@@ -1463,25 +1202,25 @@ def overview_layout() -> html.Div:
                                 FIGURES["graph_time_ratios"],
                             ),
                             figure_card(
-                                "Prototype collapse",
-                                "Continuous basins absorb many nominally distinct space groups, which is why the representation is more robust than discrete prototype counting.",
+                                "Experimental reference pipeline",
+                                "The repaired representation organizes structures into neighborhoods spanning multiple space groups; it does not certify prototype identity.",
                                 FIGURES["prototype_collapse"],
                             ),
                             figure_card(
-                                "Stepping-stone mechanism",
+                                "Structural and thermodynamic networks",
                                 "TRI-linked formulas overwhelmingly enter old structural neighborhoods instead of founding new ones.",
                                 FIGURES["stepping_stone"],
                             ),
                             figure_card(
-                                "AI vs human continuation",
-                                "Public generative outputs are more frontier-like than ordinary held-out ICSD continuation, with MatterGen closer to the human trajectory than GNoME.",
+                                "Computed cohorts and held-out ICSD",
+                                "Historical CrystalWeave maps place held-out ICSD in-basin more often than all five computed cohorts. GNoME shows greater familiarity under Graphlet and historical AMD maps.",
                                 FIGURES["gnome_frontier"],
                             ),
                             figure_card(
-                                "Animated community growth",
-                                "Decade-by-decade densification of the ICSD structural map: faded historical points fix the eye while each frame highlights the new arrivals.",
+                                "Two axes of historical precedent",
+                                "Structural proximity and reduced-formula precedent describe different aspects of the experimental record.",
                                 FIGURES["graph_growth_gif"],
-                                badge="Animation",
+                                badge="Historical map",
                             ),
                         ],
                         style={"display": "grid", "gridTemplateColumns": "repeat(2, minmax(0, 1fr))", "gap": "18px"},
@@ -1698,7 +1437,7 @@ def community_detail_panel(comm: int) -> html.Div:
         src_chip_text = "Prototype matcher / CIF systematic name"
     else:
         src_chip_color = "#5b6672"
-        src_chip_text = "No prototype assigned"
+        src_chip_text = "No checked family description"
 
     header = html.Div(
         [
@@ -1706,7 +1445,7 @@ def community_detail_panel(comm: int) -> html.Div:
                 [
                     html.Div(label, style={"fontSize": "1.45rem", "fontWeight": "700"}),
                     html.Div(
-                        f"community {int(comm)}  ·  size {int(meta.get('size', 0))}  ·  birth ~{int(meta.get('birth_year', 0))}",
+                        f"community {int(comm)}  ·  size {int(meta.get('size', 0))}  ·  birth ~{year_text(meta.get('birth_year', -1))}",
                         style={"color": "#5b6672", "marginTop": "2px"},
                     ),
                     html.Div(
@@ -1779,7 +1518,7 @@ def community_detail_panel(comm: int) -> html.Div:
         )
     else:
         rep_block = html.Div(
-            "No representative-exemplars CSV is loaded for this community. Set ICSD_REPRESENTATIVES_PATH or run extract_functional_community_representatives.py.",
+            "No central exemplars were included for this community in the repaired evidence bundle.",
             style={"marginTop": "12px", "color": "#5b6672", "lineHeight": "1.5"},
         )
 
@@ -1926,14 +1665,20 @@ def build_app() -> Dash:
                 xaxis={"visible": False},
                 yaxis={"visible": False},
                 annotations=[{
-                    "text": "Configure frozen-map paths to enable scoring.",
+                    "text": (
+                        "Compatible ICSD features are required to enable scoring."
+                        if APP_STATUS_ERROR else "Configure frozen-map paths to enable scoring."
+                    ),
                     "xref": "paper", "yref": "paper",
                     "showarrow": False, "font": {"size": 16, "color": "#5b6672"},
                 }],
             )
             if not contents:
                 return "No CIF uploaded yet.", html.Div(), placeholder
-            return "Upload received, but frozen-map paths are not configured on this server.", html.Div(), placeholder
+            return (
+                f"Upload could not be scored: {APP_STATUS_ERROR}"
+                if APP_STATUS_ERROR else "Upload received, but frozen-map paths are not configured on this server."
+            ), html.Div(), placeholder
 
         # Render the historical map with no upload, so the user sees the full
         # frozen background and colorbar even before scoring anything.
@@ -2042,4 +1787,4 @@ server = app.server
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8050)
+    app.run(debug=False, host="127.0.0.1", port=8050)

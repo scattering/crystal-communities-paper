@@ -53,7 +53,8 @@ ANIONS = {"O", "S", "Se", "Te", "F", "Cl", "Br", "I", "N"}
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--features", required=True, help="features_pca.npy")
+    p.add_argument("--features", required=True, help="Raw features.npy (ignored when --features-pca is supplied)")
+    p.add_argument("--features-pca", help="Saved production PCA coordinates; --features otherwise means raw features.")
     p.add_argument("--community-assignments", required=True)
     p.add_argument("--sample-assignments", required=True,
                    help="if not separate, pass community-assignments here too (same schema)")
@@ -283,11 +284,13 @@ def main() -> int:
     args = parse_args()
 
     print("loading features and community assignments...", flush=True)
-    X = np.load(args.features)
-    # match analyze_gnome_temporal_sweep.py: standardize, then PCA(32)
-    Xs = (X - X.mean(axis=0)) / np.where(X.std(axis=0) == 0, 1.0, X.std(axis=0))
-    from sklearn.decomposition import PCA
-    Xp = PCA(n_components=min(32, Xs.shape[0], Xs.shape[1]), random_state=42).fit_transform(Xs)
+    if args.features_pca:
+        Xp = np.load(args.features_pca)
+    else:
+        X = np.load(args.features)
+        Xs = (X - X.mean(axis=0)) / np.where(X.std(axis=0) == 0, 1.0, X.std(axis=0))
+        from sklearn.decomposition import PCA
+        Xp = PCA(n_components=min(32, Xs.shape[0], Xs.shape[1]), random_state=42).fit_transform(Xs)
 
     icsd_ids, years_list, comms_list = load_id_year_community(Path(args.community_assignments))
     if len(icsd_ids) != Xp.shape[0]:

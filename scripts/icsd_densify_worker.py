@@ -13,11 +13,11 @@ the ICSD map; the function is reused unchanged by
 referenced from the Methods section.
 
 Featurization (per CIF):
-  * per-site chemistry vector (one-hot over Element, weighted by
-    occupancy) concatenated with a local-geometry block computed
+  * seven per-site elemental properties, averaged over occupied species,
+    concatenated with a local-geometry block computed
     either from matminer's ``CrystalNNFingerprint("ops")`` (the
-    production setting, ``--local-mode matminer_ops``) or a fast
-    fallback that uses CN/distance/species moments (``fast_local``);
+    production setting, ``--local-mode matminer_ops``) or an optional fast
+    descriptor using CN/distance/species moments (``fast_local``);
   * Voronoi-graph adjacency from ``pymatgen.analysis.local_env.CrystalNN``
     weighted by neighbor weight, used as the message-passing graph;
   * ``--wl-iters`` rounds (default 3) of weighted Weisfeiler-Lehman
@@ -51,7 +51,12 @@ from typing import Iterable
 
 import numpy as np
 from pymatgen.analysis.local_env import CrystalNN
-from pymatgen.core import Element, Structure
+from pymatgen.core import Element, Species, Structure
+
+from crystal_neighbors import (
+    FEATURE_VERSION, NEIGHBOR_SETTINGS, geometry_crystalnn,
+    validate_neighbor_data, validate_neighbor_info,
+)
 
 try:
     from matminer.featurizers.site import CrystalNNFingerprint
@@ -144,10 +149,11 @@ def element_vector_from_species(species) -> np.ndarray:
     vec = np.zeros(7, dtype=float)
     total_occ = 0.0
     for sp, occ in species.items():
-        try:
-            el = Element(str(sp))
-        except Exception:
-            continue
+        el = sp.element if isinstance(sp, Species) else sp
+        if not isinstance(el, Element):
+            raise ValueError(f"Unsupported chemical species: {sp!r}")
+        if not np.isfinite(occ) or occ <= 0:
+            raise ValueError(f"Invalid occupancy for {sp!r}: {occ}")
         total_occ += float(occ)
         atomic_radius = float(el.atomic_radius or 0.0)
         avg_ionic = float(el.average_ionic_radius or 0.0)
@@ -160,18 +166,16 @@ def element_vector_from_species(species) -> np.ndarray:
             dtype=float,
         )
         vec += float(occ) * contrib
-    if total_occ > 0:
-        vec /= total_occ
+    if total_occ <= 0 or not np.isfinite(vec).all():
+        raise ValueError("Unavailable or non-finite elemental properties")
+    vec /= total_occ
     return vec
 
 
 def geometry_dim(site_fp: CrystalNNFingerprint | None) -> int:
     if site_fp is None:
-        return 4
-    try:
-        return len(site_fp.feature_labels())
-    except Exception:
-        return 4
+        raise ImportError("matminer CrystalNNFingerprint is required for matminer_ops")
+    return len(site_fp.feature_labels())
 
 
 def fast_local_geometry(
@@ -190,10 +194,7 @@ def fast_local_geometry(
     neighbor_vectors = []
     for item, w in zip(nn, weights):
         nbr_site = item["site"]
-        try:
-            d = float(structure[site_idx].distance(nbr_site))
-        except Exception:
-            d = 0.0
+        d = float(np.linalg.norm(nbr_site.coords - structure[site_idx].coords))
         distances.append(d)
         neighbor_vectors.append(element_vector_from_species(nbr_site.species))
 
@@ -210,7 +211,7 @@ def fast_local_geometry(
                     float(np.max(weights)) if len(weights) else 0.0,
                     float(np.min(distances_arr)) if len(distances_arr) else 0.0,
                     float(np.max(distances_arr)) if len(distances_arr) else 0.0,
-                    float(len({str(sp) for item in nn for sp in item["site"].species.keys()})),
+                    float(len({sp.symbol for item in nn for sp in item["site"].species.keys()})),
                 ],
                 dtype=float,
             ),
@@ -220,8 +221,8 @@ def fast_local_geometry(
     )
 
 
-def weighted_nn_from_nndata(site_fp: CrystalNNFingerprint, nndata) -> list[dict]:
-    if not site_fp.cnn.weighted_cn:
+def weighted_nn_from_nndata(nndata, weighted_cn: bool = True) -> list[dict]:
+    if not weighted_cn:
         max_key = max(nndata.cn_weights, key=lambda k: nndata.cn_weights[k])
         nn = [dict(entry) for entry in nndata.cn_nninfo[max_key]]
         for entry in nn:
@@ -236,7 +237,7 @@ def weighted_nn_from_nndata(site_fp: CrystalNNFingerprint, nndata) -> list[dict]
                 if entry["site"] == cn_entry["site"]:
                     weight += nndata.cn_weights[cn]
         entry["weight"] = weight
-    return all_nninfo
+    return [entry for entry in all_nninfo if entry["weight"] > 0]
 
 
 def fingerprint_from_nndata(site_fp: CrystalNNFingerprint, struct: Structure, idx: int, nndata) -> np.ndarray:
@@ -271,69 +272,33 @@ def local_geometry_vector(
     site_fp: CrystalNNFingerprint | None,
     geom_dim: int,
     local_mode: str,
+    diagnostics: dict | None = None,
 ) -> tuple[np.ndarray, list[tuple[int, float]]]:
-    try:
-        nndata = cnn.get_nn_data(structure, site_idx)
-        if local_mode == "matminer_ops" and site_fp is not None:
-            nn = weighted_nn_from_nndata(site_fp, nndata)
-        else:
-            nn = cnn.get_nn_info(structure, site_idx)
-    except Exception:
-        nndata = None
-        nn = []
-
-    geom_fp = None
-    if local_mode == "matminer_ops" and site_fp is not None:
-        try:
-            if nndata is None:
-                raise ValueError("Missing CrystalNN data")
-            geom_fp = fingerprint_from_nndata(site_fp, structure, site_idx, nndata)
-            if geom_fp.shape[0] != geom_dim:
-                raise ValueError(f"Unexpected geometry feature length {geom_fp.shape[0]} != {geom_dim}")
-        except Exception:
-            geom_fp = None
-    elif local_mode == "fast_local":
-        geom_fp = fast_local_geometry(structure, site_idx, nn)
-    elif local_mode == "chem_only":
-        geom_fp = np.zeros(geom_dim, dtype=float)
-        nn = []
-
-    if not nn:
-        if geom_fp is not None:
-            return geom_fp, []
+    if local_mode == "chem_only":
         return np.zeros(geom_dim, dtype=float), []
-
-    weights = np.array([float(item.get("weight", 1.0)) for item in nn], dtype=float)
-    weights = np.clip(weights, 0.0, None)
-
-    distances = []
-    neighbor_species = Counter()
-    neighbors: list[tuple[int, float]] = []
-    for item, w in zip(nn, weights):
-        nbr_site = item["site"]
-        nbr_idx = int(item["site_index"])
-        neighbors.append((nbr_idx, float(w)))
-        try:
-            d = float(structure[site_idx].distance(nbr_site))
-        except Exception:
-            d = 0.0
-        distances.append(d)
-        for sp, occ in nbr_site.species.items():
-            neighbor_species[str(sp)] += float(occ) * float(w)
-
-    distances_arr = np.array(distances, dtype=float)
-    if geom_fp is not None:
-        geom = geom_fp
+    nndata = cnn.get_nn_data(structure, site_idx)
+    validate_neighbor_data(nndata, site_idx)
+    nn = weighted_nn_from_nndata(nndata, weighted_cn=cnn.weighted_cn)
+    validate_neighbor_info(structure, site_idx, nn)
+    if local_mode == "matminer_ops":
+        if site_fp is None:
+            raise ImportError("matminer CrystalNNFingerprint is required for matminer_ops")
+        high_cn_mass = sum(w for cn, w in nndata.cn_weights.items() if cn > max(site_fp.op_types))
+        if diagnostics is not None:
+            diagnostics["sites_with_unrepresented_cn_mass"] += int(high_cn_mass > 1e-10)
+            diagnostics["max_unrepresented_cn_mass"] = max(
+                diagnostics["max_unrepresented_cn_mass"], float(high_cn_mass)
+            )
+        geom = fingerprint_from_nndata(site_fp, structure, site_idx, nndata)
+    elif local_mode == "fast_local":
+        geom = fast_local_geometry(structure, site_idx, nn)
     else:
-        geom = np.array(
-            [
-                float(weights.sum()),
-                float(distances_arr.mean()) if len(distances_arr) else 0.0,
-                float(distances_arr.std()) if len(distances_arr) else 0.0,
-                float(len(neighbor_species)),
-            ],
-            dtype=float,
-        )
+        raise ValueError(f"Unknown local mode: {local_mode}")
+    if geom.shape != (geom_dim,) or not np.isfinite(geom).all():
+        raise ValueError(f"Invalid geometry vector at site {site_idx}: shape {geom.shape}")
+    if not np.any(geom):
+        raise ValueError(f"Coordination not represented by {local_mode} at site {site_idx}")
+    neighbors = [(int(item["site_index"]), float(item["weight"])) for item in nn]
     return geom, neighbors
 
 
@@ -344,24 +309,33 @@ def build_structure_embedding(
     site_fp: CrystalNNFingerprint | None = None,
     geom_dim: int | None = None,
     local_mode: str = "matminer_ops",
+    diagnostics: dict | None = None,
 ) -> np.ndarray:
     n_sites = len(structure)
-    cnn = cnn or CrystalNN(weighted_cn=True, x_diff_weight=0.0, porous_adjustment=False)
+    if not n_sites or wl_iters < 0:
+        raise ValueError("A nonempty structure and nonnegative wl_iters are required")
+    cnn = cnn or geometry_crystalnn()
+    if diagnostics is not None:
+        diagnostics.update({"n_sites": n_sites, "ordered": bool(structure.is_ordered),
+                            "sites_with_unrepresented_cn_mass": 0,
+                            "max_unrepresented_cn_mass": 0.0})
     if local_mode == "matminer_ops":
         site_fp = site_fp or (CrystalNNFingerprint.from_preset("ops") if CrystalNNFingerprint is not None else None)
         geom_dim = geom_dim or geometry_dim(site_fp)
     elif local_mode == "fast_local":
         site_fp = None
         geom_dim = geom_dim or 12
-    else:
+    elif local_mode == "chem_only":
         site_fp = None
         geom_dim = geom_dim or 12
+    else:
+        raise ValueError(f"Unknown local mode: {local_mode}")
 
     x0 = []
     adjacency: list[list[tuple[int, float]]] = []
     for i, site in enumerate(structure):
         chem = element_vector_from_species(site.species)
-        geom, nbrs = local_geometry_vector(structure, i, cnn, site_fp, geom_dim, local_mode)
+        geom, nbrs = local_geometry_vector(structure, i, cnn, site_fp, geom_dim, local_mode, diagnostics)
         x0.append(np.concatenate([chem, geom], axis=0))
         adjacency.append(nbrs)
 
@@ -394,7 +368,10 @@ def build_structure_embedding(
         ],
         dtype=float,
     )
-    return np.concatenate([pooled, global_vec], axis=0)
+    embedding = np.concatenate([pooled, global_vec], axis=0)
+    if not np.isfinite(embedding).all():
+        raise ValueError("Non-finite structure embedding")
+    return embedding
 
 
 def init_worker(
@@ -427,7 +404,7 @@ def init_worker(
     WORKER_WL_ITERS = wl_iters
     WORKER_MAX_SITES = max_sites
     WORKER_LOCAL_MODE = local_mode
-    WORKER_CNN = CrystalNN(weighted_cn=True, x_diff_weight=0.0, porous_adjustment=False)
+    WORKER_CNN = geometry_crystalnn()
     if local_mode == "matminer_ops":
         WORKER_SITE_FP = CrystalNNFingerprint.from_preset("ops") if CrystalNNFingerprint is not None else None
         WORKER_GEOM_DIM = geometry_dim(WORKER_SITE_FP)
@@ -448,6 +425,7 @@ def featurize_record(rec: Record) -> tuple[bool, Record, np.ndarray | None, dict
         if len(structure) > WORKER_MAX_SITES:
             return False, rec, None, {"icsd_id": rec.icsd_id, "reason": f"too_many_sites:{len(structure)}"}
 
+        diagnostics: dict = {}
         emb = build_structure_embedding(
             structure,
             WORKER_WL_ITERS,
@@ -455,8 +433,9 @@ def featurize_record(rec: Record) -> tuple[bool, Record, np.ndarray | None, dict
             site_fp=WORKER_SITE_FP,
             geom_dim=WORKER_GEOM_DIM,
             local_mode=WORKER_LOCAL_MODE,
+            diagnostics=diagnostics,
         )
-        return True, rec, emb, None
+        return True, rec, emb, diagnostics
     except Exception as exc:  # pragma: no cover - exploratory pipeline
         return False, rec, None, {"icsd_id": rec.icsd_id, "reason": type(exc).__name__, "detail": str(exc)[:200]}
 

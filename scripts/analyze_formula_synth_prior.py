@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthesizability prior via reduced-formula overlap with ICSD.
+"""Historical precedent from scale-invariant formula overlap with ICSD.
 
 For each external source (GNoME, MatterGen, MP, Alexandria, JARVIS), compute
 the fraction of proposals whose reduced_formula appears in any ICSD entry.
@@ -21,8 +21,8 @@ source:
   │  structurally exotic)│  most exploratory)       │
   └──────────────────────┴──────────────────────────┘
 
-ICSD reference is the union of post_cutoff first-report formulas, which
-captures every composition first reported in ICSD after 1980 (~81K unique).
+ICSD reference is the union of post_cutoff first-report records, which
+captures every analyzed composition first reported in ICSD after 1980 (~81K).
 Pre-1980 ICSD compositions are not covered (caveat documented in writeup).
 """
 from __future__ import annotations
@@ -34,6 +34,8 @@ import math
 from pathlib import Path
 from typing import Iterable
 
+from formula_conventions import scale_invariant_formula_key
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
@@ -41,7 +43,13 @@ def parse_args() -> argparse.Namespace:
                    help="Dir containing split_<year>/first_report_formulas.csv "
                    "for the per-cutoff first-report files. Union builds the "
                    "ICSD reference set (post-1980 ICSD, ~81K formulas).")
-    p.add_argument("--icsd-formulas-splits", nargs="+", default=["1980", "1990", "2000", "2010"])
+    p.add_argument(
+        "--icsd-formulas-splits",
+        nargs="+",
+        default=["1980"],
+        help="First-report split(s) to union. The 1980 split is the complete "
+        "analyzed post-1980 reference; later splits are cutoff-specific subsets.",
+    )
     p.add_argument("--source", action="append", nargs=2, metavar=("NAME", "PATH"),
                    help="External source records CSV. Repeatable.", required=True)
     p.add_argument("--per-community-thresholds",
@@ -70,11 +78,18 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return centre - half, centre + half
 
 
-def load_icsd_formulas(formulas_dir: Path, splits: Iterable[str]) -> dict[str, int]:
-    """Return {reduced_formula: first_year}, taking the minimum first_year
-    across the per-split files (since the same composition may appear in
-    multiple splits as a later second/third entry)."""
-    out: dict[str, int] = {}
+def load_icsd_formulas(
+    formulas_dir: Path, splits: Iterable[str]
+) -> tuple[dict[tuple[tuple[str, int], ...], int], int, int]:
+    """Return scale-invariant keys and reference record/string counts.
+
+    The split files overlap.  ICSD identifiers deduplicate records, and a key
+    can represent more than one display string when formula-unit conventions
+    differ.
+    """
+    out: dict[tuple[tuple[str, int], ...], int] = {}
+    record_ids: set[str] = set()
+    display_strings: set[str] = set()
     for s in splits:
         path = formulas_dir / f"split_{s}" / "first_report_formulas.csv"
         if not path.exists():
@@ -86,12 +101,18 @@ def load_icsd_formulas(formulas_dir: Path, splits: Iterable[str]) -> dict[str, i
                 if not formula:
                     continue
                 try:
+                    key = scale_invariant_formula_key(formula)
+                except (TypeError, ValueError):
+                    continue
+                try:
                     year = int(row["year"])
                 except (KeyError, ValueError):
                     continue
-                if formula not in out or year < out[formula]:
-                    out[formula] = year
-    return out
+                record_ids.add((row.get("cif_id") or f"{s}:{formula}:{year}").strip())
+                display_strings.add(formula)
+                if key not in out or year < out[key]:
+                    out[key] = year
+    return out, len(record_ids), len(display_strings)
 
 
 def load_external_records(
@@ -125,7 +146,11 @@ def load_external_records(
                 else:
                     thr = per_community_thr.get(c)
                     outlier = (thr is None) or (d > thr)
-            rows.append({"formula": formula, "outlier_like": outlier})
+            try:
+                formula_key = scale_invariant_formula_key(formula)
+            except (TypeError, ValueError):
+                continue
+            rows.append({"formula": formula, "formula_key": formula_key, "outlier_like": outlier})
     return rows
 
 
@@ -133,9 +158,15 @@ def main() -> int:
     args = parse_args()
 
     print("loading ICSD reference formulas...", flush=True)
-    icsd_formulas = load_icsd_formulas(Path(args.icsd_formulas_dir), args.icsd_formulas_splits)
+    icsd_formulas, n_reference_records, n_reference_strings = load_icsd_formulas(
+        Path(args.icsd_formulas_dir), args.icsd_formulas_splits
+    )
     icsd_formula_set = set(icsd_formulas.keys())
-    print(f"  {len(icsd_formula_set)} unique ICSD reduced_formulas (post-1980 union)", flush=True)
+    print(
+        f"  {n_reference_records} ICSD first-report records; "
+        f"{len(icsd_formula_set)} scale-invariant formulas (post-1980 union)",
+        flush=True,
+    )
 
     per_community_thr = None
     if args.per_community_thresholds:
@@ -149,8 +180,11 @@ def main() -> int:
               f"{thr_data.get('pooled_p95_threshold', 'unknown')}", flush=True)
 
     summary: dict[str, dict] = {
+        "icsd_reference_records": n_reference_records,
+        "icsd_reference_display_strings": n_reference_strings,
         "icsd_reference_size": len(icsd_formula_set),
-        "icsd_reference_caveat": "Union of post-1980 ICSD first-report formulas; "
+        "formula_key": "collapse species/isotopes to elements; normalize total amount to one; pymatgen Composition.get_integer_formula_and_factor(); gcd reduce; sort elements alphabetically",
+        "icsd_reference_caveat": "Union of analyzed post-1980 ICSD first-report records; "
                                   "pre-1980 ICSD compositions are NOT included.",
         "threshold_mode": "per_community_p95" if per_community_thr else "pooled_p95_legacy",
         "sources": {},
@@ -166,7 +200,7 @@ def main() -> int:
     for name, path in args.source:
         rows = load_external_records(Path(path), per_community_thr)
         n = len(rows)
-        match = [(r["formula"] in icsd_formula_set, r["outlier_like"]) for r in rows]
+        match = [(r["formula_key"] in icsd_formula_set, r["outlier_like"]) for r in rows]
         n_match = sum(1 for m, _ in match if m)
         # Quadrants
         ib_match = sum(1 for m, o in match if m and not o)

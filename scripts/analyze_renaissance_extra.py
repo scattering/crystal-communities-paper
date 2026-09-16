@@ -22,7 +22,6 @@ Each probe identifies the dominant production community for its seed family
 """
 from __future__ import annotations
 
-import argparse
 import csv
 import json
 import re
@@ -33,8 +32,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
-from frontier_common import require_zenodo_file
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -50,10 +47,9 @@ def parse_elements(formula: str) -> set[str]:
     return set(re.findall(r"[A-Z][a-z]?", formula))
 
 
-def load_records(community_assign: Path = None):
+def load_records():
     out = []
-    path = community_assign if community_assign is not None else COMMUNITY_ASSIGN
-    with path.open(newline="", encoding="utf-8") as f:
+    with COMMUNITY_ASSIGN.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             try:
                 out.append((int(row["icsd_id"]), int(row["year"]), int(row["community"])))
@@ -62,10 +58,9 @@ def load_records(community_assign: Path = None):
     return out
 
 
-def load_formula_lookup(post_cutoff_dirs: list[Path] = None) -> dict[int, str]:
+def load_formula_lookup() -> dict[int, str]:
     out = {}
-    dirs = post_cutoff_dirs if post_cutoff_dirs is not None else POST_CUTOFF_DIRS
-    for d in dirs:
+    for d in POST_CUTOFF_DIRS:
         for fname in ["first_report_formulas.csv", "post_cutoff_accessibility_records.csv"]:
             path = d / fname
             if not path.exists():
@@ -197,34 +192,10 @@ PROBES = [
 ]
 
 
-def parse_args() -> argparse.Namespace:
-    """CLI overrides for input/output paths (defaults match production layout)."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--community-assignments", default=str(COMMUNITY_ASSIGN),
-                        help="Path to community_assignments_labels3.csv.")
-    parser.add_argument("--post-cutoff-dir", action="append", default=None,
-                        help="Per-cutoff first-report directory. Repeatable. "
-                             "Defaults to the four production splits 1980/1990/2000/2010.")
-    parser.add_argument("--output-fig", default=str(OUT_FIG), help="Output PNG path.")
-    parser.add_argument("--output-json", default=str(OUT_JSON), help="Output summary JSON path.")
-    return parser.parse_args()
-
-
 def main() -> int:
-    args = parse_args()
-    community_assign = require_zenodo_file(
-        args.community_assignments,
-        what="canonical 167.5K-row ICSD community assignments table",
-    )
-    # post_cutoff_dirs is best-effort (load_formula_lookup skips missing
-    # dirs). Don't gate on it.
-    post_cutoff_dirs = [Path(p) for p in (args.post_cutoff_dir or POST_CUTOFF_DIRS)]
-    out_fig = Path(args.output_fig)
-    out_json = Path(args.output_json)
-
     print("loading data...", flush=True)
-    records = load_records(community_assign)
-    formula_lookup = load_formula_lookup(post_cutoff_dirs)
+    records = load_records()
+    formula_lookup = load_formula_lookup()
     print(f"  {len(records)} records, {len(formula_lookup)} formulas", flush=True)
 
     fig, axes = plt.subplots(len(PROBES), 1, figsize=(11, 3 * len(PROBES)), dpi=160, sharex=True)
@@ -293,12 +264,11 @@ def main() -> int:
     axes[-1].set_xlabel("Publication year", fontsize=9)
     fig.suptitle("Renaissance probes: targeted families and a survey deep-dive", fontsize=11, fontweight="bold", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    out_fig.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_fig, dpi=160, bbox_inches="tight")
+    OUT_FIG.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(OUT_FIG, dpi=160, bbox_inches="tight")
     plt.close(fig)
-    out_json.parent.mkdir(parents=True, exist_ok=True)
-    out_json.write_text(json.dumps(summary, indent=2, default=str))
-    print(f"\nwrote {out_fig}\nwrote {out_json}")
+    OUT_JSON.write_text(json.dumps(summary, indent=2, default=str))
+    print(f"\nwrote {OUT_FIG}\nwrote {OUT_JSON}")
     return 0
 
 

@@ -13,7 +13,6 @@ explicit in the caption.
 """
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 
@@ -21,8 +20,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
-from frontier_common import require_zenodo_file
 
 
 # Resolve repo-root anchored paths so this script can be run from any
@@ -47,28 +44,13 @@ SOURCE_COLORS = {
 }
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--summary",
-        default=str(REPO / "notes" / "formula_synth_prior_summary.json"),
-        help="Path to formula_synth_prior_summary.json.",
-    )
-    parser.add_argument(
-        "--output",
-        default=str(REPO / "resources" / "figures" / "icsd_densification" / "synth_prior_quadrant.png"),
-        help="Output PNG path.",
-    )
-    return parser.parse_args()
-
-
 def main() -> int:
-    args = parse_args()
-    summary_path = require_zenodo_file(
-        args.summary,
-        what="formula × synth-prior summary driving the quadrant figure",
-    )
-    summary = json.loads(summary_path.read_text())
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--summary", type=Path, default=REPO / "notes" / "formula_synth_prior_summary.json")
+    parser.add_argument("--output", type=Path, default=REPO / "resources" / "figures" / "icsd_densification" / "synth_prior_quadrant.png")
+    args = parser.parse_args()
+    summary = json.loads(args.summary.read_text())
     sources = summary["sources"]
 
     # Quadrant grid layout: rows are in-basin / frontier; cols are formula
@@ -95,15 +77,15 @@ def main() -> int:
 
     # Quadrant labels (corners)
     label_kw = dict(fontsize=9, color="#5b6672", style="italic", ha="center")
-    ax.text(0.5, 1.93, "in-basin & formula match\n(strongest synth prior)", **label_kw)
-    ax.text(1.5, 1.93, "in-basin, no formula match\n(novel chemistry,\nknown structural basin)", **label_kw)
-    ax.text(0.5, 0.07, "frontier & formula match\n(known composition,\nnovel structural variant)", **label_kw)
-    ax.text(1.5, 0.07, "frontier, no formula match\n(weakest synth prior;\nmost exploratory)", **label_kw)
+    ax.text(0.5, 1.93, "in-basin & formula match\n(both precedents present)", **label_kw)
+    ax.text(1.5, 1.93, "in-basin, no formula match\n(structural precedent only)", **label_kw)
+    ax.text(0.5, 0.07, "frontier & formula match\n(formula precedent only)", **label_kw)
+    ax.text(1.5, 0.07, "frontier, no formula match\n(neither precedent present)", **label_kw)
 
     # Within each quadrant, place 5 source bubbles in a row at fixed y.
     # Bubble area scaling: pick a max-area constant so the largest bubble
     # is comfortable within a quadrant.
-    # Bubble-area scaling. Documented in paper/supporting_information.md §S1.5.
+    # Bubble-area scaling. Documented in the Supporting Information.
     #
     # max_area_pts = the area in matplotlib points^2 that corresponds to a
     # fraction of 1.0 (i.e. 100% of the source's proposals in this quadrant).
@@ -148,9 +130,8 @@ def main() -> int:
             # 18.0 pt^2 minimum bubble area: floor below which a bubble
             # would shrink to a single pixel and become unreadable. Zeros
             # are handled separately above (X marker), so this floor only
-            # affects positive fractions below ~0.28%; the current data
-            # does not trigger it. See paper supporting information §S1.5
-            # for the bubble-area scaling rationale.
+            # affects positive fractions below ~0.28%. Trade-off discussed
+            # in TODO.md §B10. The current data does not trigger it.
             area = max(frac * max_area_pts, 18.0)
             ax.scatter([x], [y], s=area, color=color, alpha=0.72,
                        edgecolors="white", linewidths=0.8, zorder=5)
@@ -192,11 +173,11 @@ def main() -> int:
               ncol=5, frameon=False, fontsize=8.5, handletextpad=0.5)
 
     ax.set_title(
-        "Synthesizability prior: in-basin × formula-match quadrant",
+        "Two axes of historical precedent",
         fontsize=12, fontweight="bold", pad=14,
     )
 
-    out = Path(args.output)
+    out = args.output
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(out, dpi=180, bbox_inches="tight")

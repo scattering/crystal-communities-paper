@@ -7,12 +7,12 @@ Reads the post-cutoff accessibility records emitted by
 rule out trivial explanations of the 𝒜ᵢ-vs-first-report-year
 correlation:
 
-  1. *Composition-matched first reports*: group post-cutoff entries by
-     anonymized composition class (Composition.anonymized_formula); for
+  1. *Composition-matched first reports*: group post-cutoff entries by the
+     OPTIMADE-style anonymous stoichiometry used by the formula-layer analysis; for
      classes with at least ``--min-class-size`` entries, the
      class-centered first-report year is correlated against the
      class-centered 𝒜ᵢ. This removes the across-chemistry main effect.
-  2. *Strict polymorph controls*: among reduced formulas reported in
+  2. *Strict same-composition controls*: among scale-invariant compositions reported in
      multiple distinct years (year gap ≥ ``--min-year-gap``) and whose
      entries fall in ≥ ``--min-community-changes`` distinct
      communities, asks whether the *first*-reported polymorph has lower
@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import hashlib
 import math
 from collections import defaultdict
 from pathlib import Path
@@ -45,6 +46,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pymatgen.core import Composition
+
+from formula_conventions import anonymous_stoichiometry_key, normalized_fraction_key
 
 
 def parse_args() -> argparse.Namespace:
@@ -117,9 +120,9 @@ def spearman(x: list[float], y: list[float]) -> float | None:
     return pearson(rankdata(x), rankdata(y))
 
 
-def anonymized_formula(formula: str) -> str | None:
+def formula_keys(formula: str) -> tuple[tuple[tuple[str, ...], tuple[float, ...]], tuple[int, ...]] | None:
     try:
-        return Composition(formula).anonymized_formula
+        return normalized_fraction_key(formula), anonymous_stoichiometry_key(formula)
     except Exception:
         return None
 
@@ -135,9 +138,10 @@ def load_rows(path: Path) -> list[dict[str, object]]:
             in_basin = parse_int(row.get("is_in_basin", ""))
             if not formula or year is None or score is None or comm is None or in_basin is None:
                 continue
-            anon = anonymized_formula(formula)
-            if anon is None:
+            keys = formula_keys(formula)
+            if keys is None:
                 continue
+            identity, anonymous = keys
             try:
                 comp = Composition(formula)
                 n_elements = len(comp.elements)
@@ -151,26 +155,27 @@ def load_rows(path: Path) -> list[dict[str, object]]:
                     "A_i": score,
                     "assigned_community": comm,
                     "is_in_basin": in_basin,
-                    "anonymized_formula": anon,
+                    "formula_identity": identity,
+                    "anonymous_stoichiometry": anonymous,
                     "n_elements": n_elements,
-                    "class_key": f"{anon}|{n_elements}",
+                    "class_key": anonymous,
                 }
             )
     return rows
 
 
-def class_centered_first_reports(rows: list[dict[str, object]], min_class_size: int) -> tuple[list[dict[str, object]], dict[str, int]]:
-    first_by_formula: dict[str, dict[str, object]] = {}
+def class_centered_first_reports(rows: list[dict[str, object]], min_class_size: int) -> tuple[list[dict[str, object]], dict[tuple[int, ...], int]]:
+    first_by_formula: dict[object, dict[str, object]] = {}
     for row in rows:
-        formula = str(row["reduced_formula"])
-        prev = first_by_formula.get(formula)
+        identity = row["formula_identity"]
+        prev = first_by_formula.get(identity)
         if prev is None or int(row["year"]) < int(prev["year"]):
-            first_by_formula[formula] = row
+            first_by_formula[identity] = row
 
     first_reports = list(first_by_formula.values())
-    by_class: dict[str, list[dict[str, object]]] = defaultdict(list)
+    by_class: dict[tuple[int, ...], list[dict[str, object]]] = defaultdict(list)
     for row in first_reports:
-        by_class[str(row["class_key"])].append(row)
+        by_class[row["class_key"]].append(row)
 
     class_sizes = {k: len(v) for k, v in by_class.items()}
     usable_rows: list[dict[str, object]] = []
@@ -190,12 +195,12 @@ def class_centered_first_reports(rows: list[dict[str, object]], min_class_size: 
 def strict_polymorph_rows(
     rows: list[dict[str, object]], min_year_gap: int, min_community_changes: int
 ) -> list[dict[str, object]]:
-    by_formula: dict[str, list[dict[str, object]]] = defaultdict(list)
+    by_formula: dict[object, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
-        by_formula[str(row["reduced_formula"])].append(row)
+        by_formula[row["formula_identity"]].append(row)
 
     out: list[dict[str, object]] = []
-    for formula, group in by_formula.items():
+    for identity, group in by_formula.items():
         years = sorted({int(r["year"]) for r in group})
         comms = sorted({int(r["assigned_community"]) for r in group})
         if len(years) < 2 or len(comms) < min_community_changes:
@@ -215,7 +220,8 @@ def strict_polymorph_rows(
         later_basin = mean([float(r["is_in_basin"]) for r in later_distinct])
         out.append(
             {
-                "reduced_formula": formula,
+                "reduced_formula": str(group[0]["reduced_formula"]),
+                "formula_identity": repr(identity),
                 "first_year": first_year,
                 "later_min_year": min(int(r["year"]) for r in later_distinct),
                 "first_A_i_mean": first_a,
@@ -273,6 +279,13 @@ def main() -> int:
     )
 
     summary = {
+        "method": {
+            "formula_identity": "formula_conventions.normalized_fraction_key(decimals=12)",
+            "composition_class": "formula_conventions.anonymous_stoichiometry_key (OPTIMADE coefficient order)",
+            "formula_conventions_sha256": hashlib.sha256(
+                (Path(__file__).resolve().parent / "formula_conventions.py").read_bytes()
+            ).hexdigest(),
+        },
         "n_rows": len(rows),
         "n_class_centered_first_reports": len(class_rows),
         "n_classes_total": len(class_sizes),

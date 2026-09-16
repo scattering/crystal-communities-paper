@@ -27,8 +27,8 @@ Pipeline:
 
 Inputs (under ``--run-dir``):
   features_pca.npy, sample_assignments.csv (HDBSCAN labels), and
-  optionally a local ICSD CIF source (requires a valid ICSD license)
-  for prototype labeling.
+  optionally an ICSD zip + password (or extracted CIF directory) for
+  prototype labeling.
 
 Outputs (under ``--output-dir``):
   community_assignments.csv             icsd_id, year, community
@@ -90,8 +90,8 @@ def parse_args() -> argparse.Namespace:
         default=8.0,
         help="Fallback StructureMatcher angle tolerance",
     )
-    parser.add_argument("--icsd-zip", help="Optional local CIF archive path for prototype labeling")
-    parser.add_argument("--zip-password", help="Optional password for protected CIF archive members")
+    parser.add_argument("--icsd-zip", help="Optional ICSD zip path for prototype labeling")
+    parser.add_argument("--zip-password", help="Password for encrypted ICSD zip members")
     parser.add_argument("--cif-root", help="Optional extracted CIF directory for prototype labeling")
     return parser.parse_args()
 
@@ -155,9 +155,14 @@ def build_weighted_graph(
     nbrs = NearestNeighbors(n_neighbors=k + 1, metric="euclidean", algorithm="auto")
     nbrs.fit(X)
     distances, indices = nbrs.kneighbors(X)
-    neighbor_sets = [set(row[1:]) for row in indices]
+    # With duplicate vectors, self need not be first (or even returned).
+    # Preserve sklearn's tie order while retaining k actual other rows.
+    retained = [np.flatnonzero(row != i)[:k] for i, row in enumerate(indices)]
+    indices = np.asarray([row[keep] for row, keep in zip(indices, retained)])
+    distances = np.asarray([row[keep] for row, keep in zip(distances, retained)])
+    neighbor_sets = [set(row) for row in indices]
 
-    positive = distances[:, 1:]
+    positive = distances
     sigma = float(np.median(positive[positive > 0])) if np.any(positive > 0) else 1.0
     sigma = max(sigma, 1e-8)
 
@@ -165,7 +170,7 @@ def build_weighted_graph(
     graph.add_nodes_from(range(len(X)))
 
     for i in range(len(X)):
-        for j, dist in zip(indices[i, 1:], distances[i, 1:]):
+        for j, dist in zip(indices[i], distances[i]):
             j = int(j)
             if i == j:
                 continue

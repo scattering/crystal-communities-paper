@@ -214,7 +214,8 @@
       display: block;
       width: 100%;
       height: 280px;
-      object-fit: cover;
+      object-fit: contain;
+      background: #fff;
       border-bottom: 1px solid rgba(217, 203, 183, 0.9);
     }
 
@@ -342,41 +343,41 @@
     <section class="hero">
       <div class="panel hero-copy">
         <div>
-          <div class="eyebrow">ICSD Structural History</div>
+          <div class="eyebrow">Structural History Demo</div>
           <h1>Human discovery mostly densifies known crystal basins.</h1>
           <p class="lead">
-            A visual hub for the manuscript's results: century-scale densification,
-            thermodynamic stepping-stone behavior, and the calibration of
-            GNoME and MatterGen against the historical human trajectory.
+            Explore the repaired ICSD structural-history results: century-scale densification,
+            structural and thermodynamic networks, and five public computed cohorts placed
+            against the historical experimental record.
           </p>
         </div>
         <div class="hero-actions">
-          <a class="button primary" href="../figures/icsd_densification/icsd_graph_view_umap3d_1930s_2010s_labels4.html">Open 3D Viewer</a>
-          <a class="button" href="../figures/icsd_densification/icsd_graph_connectivity_view_labels4.html">Open Connectivity Viewer</a>
-          <a class="button" href="https://github.com/scattering/crystal-communities-paper">Code &amp; Data Repository</a>
+          <a class="button primary" href="#figures">Explore Core Figures</a>
+          <a class="button" href="#explore">Explore the Map</a>
+          <a class="button" href="https://github.com/scattering/crystal-communities-paper">Explore Analysis Code</a>
         </div>
       </div>
       <div class="panel summary">
         <div>
-          <div class="eyebrow">Key Numbers</div>
-          <h2 style="font-size: 1.8rem; margin-top: 4px;">Dataset at a glance</h2>
+          <div class="eyebrow">Dataset at a Glance</div>
+          <h2 style="font-size: 1.8rem; margin-top: 4px;">CrystalWeave reference map</h2>
         </div>
         <div class="summary-grid">
           <div class="metric">
-            <div class="value">167,500</div>
-            <div class="label">ICSD entries featurized in the full production run.</div>
+            <div class="value">167,392</div>
+            <div class="label">ICSD entries encoded with CrystalWeave: 92.3% of 181,362 requested entries.</div>
           </div>
           <div class="metric">
-            <div class="value">44.2</div>
-            <div class="label">Mean space groups absorbed by each of the ten largest continuous basins.</div>
+            <div class="value">99.3</div>
+            <div class="label">Mean distinct space groups in the ten largest communities.</div>
           </div>
           <div class="metric">
-            <div class="value">82.9%</div>
-            <div class="label">New formulas that join existing structural communities instead of founding new ones.</div>
+            <div class="value">91.8%</div>
+            <div class="label">TRI-shared formulas entering existing communities: 16,112 of 17,556 classifiable formulas.</div>
           </div>
           <div class="metric">
-            <div class="value">Humans &gt; MatterGen &gt; GNoME</div>
-            <div class="label">Stable held-out frontier ordering across the historical cutoffs.</div>
+            <div class="value">Five computed cohorts</div>
+            <div class="label">Held-out ICSD has a higher in-basin rate than all five studied cohorts in independently trained historical CrystalWeave maps.</div>
           </div>
         </div>
       </div>
@@ -385,104 +386,110 @@
     <section class="section">
       <div class="section-header">
         <div>
-          <h2>Overview</h2>
-          <p>Three threads: densification as the historical phenomenon, stepping-stone behavior as the mechanism, and generative-model calibration as the application.</p>
+          <h2>Historical Context</h2>
+          <p>The map describes how the experimental record develops and provides a common structural reference for public computed cohorts.</p>
         </div>
       </div>
       <div class="story-grid">
         <article class="panel story-card">
           <h3>1. Structural Densification</h3>
-          <p>The share of structures that open new communities collapses through time, while assignment to preexisting basins comes to dominate the ICSD record.</p>
+          <p>The share of structures that open new communities declines through time, while assignment to preexisting basins comes to dominate the ICSD record.</p>
         </article>
         <article class="panel story-card">
-          <h3>2. Path Dependence</h3>
-          <p>TRI-aligned analysis shows that new formulas overwhelmingly enter old neighborhoods first. Discovery is guided by historically accessible structural stepping stones.</p>
+          <h3>2. Historical Precedent</h3>
+          <p>TRI-shared formulas overwhelmingly enter existing structural communities. Structural proximity and reduced-formula precedent describe different aspects of the experimental record.</p>
         </article>
         <article class="panel story-card">
-          <h3>3. Generative AI Calibration</h3>
-          <p>Held-out historical maps separate ordinary human continuation from public AI outputs, with MatterGen closer to the human trajectory than GNoME.</p>
+          <h3>3. Computed Cohort Comparison</h3>
+          <p>Held-out ICSD is more often in-basin than all five computed cohorts in historical CrystalWeave maps. Across representations, GNoME combines extensive compositional novelty with familiar local patterns: both Graphlet maps and the historical AMD maps place it within experimental neighborhoods more often.</p>
         </article>
       </div>
     </section>
 
-    <section class="section">
+    <section class="section" id="figures">
       <div class="section-header">
         <div>
           <h2>Core Figures</h2>
-          <p>These are the main static assets that currently support the manuscript and supporting information.</p>
+          <p>These regenerated figures support the revised manuscript and supporting information. Open each figure to inspect it at full size.</p>
         </div>
       </div>
       <div class="figure-grid">
         <article class="panel figure-card">
-          <img src="../figures/icsd_densification/graph_time_ratios.png" alt="Graph time ratios" />
+          <a href="../figures/icsd_densification/temporal_cliff_stacked_area_repaired.png"><img src="../figures/icsd_densification/temporal_cliff_stacked_area_repaired.png" alt="Historical proportions of new-community and existing-community events" /></a>
           <div class="figure-copy">
-            <h3>Century-Scale Community Birth Collapse</h3>
-            <p>The clearest historical result: new community birth declines while occupancy of existing basins rises through the ICSD record.</p>
+            <h3>Century-Scale Community Birth Decline</h3>
+            <p>New-community events decline while occupancy of existing basins rises through the ICSD record.</p>
           </div>
         </article>
         <article class="panel figure-card">
-          <img src="../figures/icsd_densification/prototype_collapse_space_groups.png" alt="Prototype collapse" />
+          <a href="../figures/icsd_densification/pipeline_schematic_repaired.png"><img src="../figures/icsd_densification/pipeline_schematic_repaired.png" alt="Experimental reference map construction pipeline" /></a>
           <div class="figure-copy">
-            <h3>Prototype Collapse</h3>
-            <p>Continuous structural basins absorb many nominally separate space groups, which is why the method is more robust than discrete prototype counting.</p>
+            <h3>Experimental Reference Pipeline</h3>
+            <p>The repaired representation organizes structures into neighborhoods spanning multiple space groups. Community membership alone does not establish atomic-prototype identity.</p>
           </div>
         </article>
         <article class="panel figure-card">
-          <img src="../figures/icsd_densification/tri_stepping_stone_counts.png" alt="TRI stepping stone counts" />
+          <a href="../figures/icsd_densification/formula_graph_tri_comparison_repaired.png"><img src="../figures/icsd_densification/formula_graph_tri_comparison_repaired.png" alt="Comparison of structural and thermodynamic formula networks" /></a>
           <div class="figure-copy">
-            <h3>Stepping-Stone Mechanism</h3>
-            <p>TRI-linked formulas overwhelmingly land inside already-established structural neighborhoods rather than founding new ones.</p>
+            <h3>Structural and Thermodynamic Networks</h3>
+            <p>TRI-linked formulas overwhelmingly enter established structural neighborhoods instead of founding new ones.</p>
           </div>
         </article>
         <article class="panel figure-card">
-          <img src="../figures/icsd_densification/gnome_frontier_pca.png" alt="GNoME frontier PCA" />
+          <a href="../figures/icsd_densification/fig3_5source_calibration_repaired.png"><img src="../figures/icsd_densification/fig3_5source_calibration_repaired.png" alt="Five computed cohorts compared with held-out ICSD at historical cutoffs" /></a>
           <div class="figure-copy">
-            <h3>AI vs Human Structural Continuation</h3>
-            <p>Generative outputs are more frontier-like than ordinary held-out ICSD continuation, with a stable ordering of humans, MatterGen, then GNoME.</p>
+            <h3>Computed Cohorts and Held-Out ICSD</h3>
+            <p>Held-out ICSD is more often in-basin at production settings. The ordering of computed cohorts changes with cutoff and partition.</p>
+          </div>
+        </article>
+        <article class="panel figure-card">
+          <a href="../figures/icsd_densification/synth_prior_quadrant_repaired.png"><img src="../figures/icsd_densification/synth_prior_quadrant_repaired.png" alt="Computed candidates classified by structural proximity and scale-invariant formula precedent" /></a>
+          <div class="figure-copy">
+            <h3>Two Axes of Historical Precedent</h3>
+            <p>Distance from the experimental map and prior observation of a reduced formula provide separate descriptions of a computed candidate.</p>
           </div>
         </article>
       </div>
     </section>
 
-    <section class="section">
+    <section class="section" id="explore">
       <div class="section-header">
         <div>
-          <h2>Live Viewers</h2>
-          <p>Interactive HTML viewers for inspecting the basin geometry and the cleaned community graph.</p>
+          <h2>Explore the Repaired Map</h2>
+          <p>The companion Dash application provides the interactive Community Map and CIF scorer when configured with the repaired reference bundle.</p>
         </div>
       </div>
       <div class="viewer-grid">
         <article class="panel viewer-card">
-          <h3>3D Structural Map</h3>
-          <p>The strongest current way to inspect the basin geometry across decades.</p>
+          <h3>Community Map</h3>
+          <p>Launch the local Dash companion and select Community Map to inspect the repaired communities, checked descriptions, and central representatives.</p>
           <ul>
-            <li><a href="../figures/icsd_densification/icsd_graph_view_umap3d_1930s_2010s_labels4.html">Open 3D UMAP viewer</a></li>
-            <li><a href="../figures/icsd_densification/icsd_graph_growth_umap3d_1930s_2010s_labels4.gif">Open growth animation</a></li>
+            <li><a href="../figures/icsd_densification/pipeline_schematic_repaired.png">View the reference pipeline</a></li>
           </ul>
         </article>
         <article class="panel viewer-card">
-          <h3>Connectivity View</h3>
-          <p>Useful for understanding the cleaned graph structure and labeled basin relationships.</p>
+          <h3>Score a Structure</h3>
+          <p>In the Dash companion, upload a CIF to obtain its nearest-community distance, in-basin or frontier status, and historical accessibility cost. The default observation year is 2019.</p>
           <ul>
-            <li><a href="../figures/icsd_densification/icsd_graph_connectivity_view_labels4.html">Open connectivity viewer</a></li>
-            <li><a href="../figures/icsd_densification/icsd_graph_view.html">Open original graph viewer</a></li>
+            <li><a href="../figures/icsd_densification/synth_prior_quadrant_repaired.png">View historical-precedent quadrants</a></li>
           </ul>
         </article>
         <article class="panel viewer-card">
           <h3>Supporting Comparisons</h3>
-          <p>The current supplement-backed comparisons that sharpen the main story.</p>
+          <p>Explore the regenerated comparisons accompanying the revised supplement.</p>
           <ul>
-            <li><a href="../figures/icsd_densification/formula_graph_tri_comparison.png">TRI formula-graph comparison</a></li>
-            <li><a href="../figures/icsd_densification/structural_accessibility_boxplot.png">Accessibility score summary</a></li>
+            <li><a href="../figures/icsd_densification/formula_graph_tri_comparison_repaired.png">TRI formula-graph comparison</a></li>
+            <li><a href="../figures/icsd_densification/structural_accessibility_boxplot_repaired.png">Historical accessibility cost summary</a></li>
           </ul>
         </article>
+      </div>
+      <div class="note">
+        Historical accessibility cost is a description of the experimental record, not a calibrated synthesis-success score. Structural community membership does not establish that two structures share an atomic prototype.
       </div>
     </section>
 
     <footer>
-      Companion to <em>Computational materials proposals depart from the structural
-      memory of experimental discovery</em>. Code and data:
-      <a href="https://github.com/scattering/crystal-communities-paper">github.com/scattering/crystal-communities-paper</a>.
+      Static companion to the repaired <code>crystal-communities</code> manuscript and reference map. Updated September 2026.
     </footer>
   </main>
 </body>

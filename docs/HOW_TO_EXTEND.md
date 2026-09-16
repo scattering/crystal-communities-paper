@@ -1,134 +1,100 @@
-# How to project new structures into the ICSD reference frame
+# Score new crystal structures
 
-The most reusable piece of this work is the **frozen ICSD reference
-frame**: 167,500 ICSD entries embedded into a 32-D PCA basis with a
-fixed Louvain community partition and per-community 95th-percentile
-within-community distance thresholds. Anyone with a new set of
-crystal structures — a new generative model's output, a new DFT-
-screened candidate library, a laboratory CIF collection — can
-project them into the same coordinate and obtain the same
-synthesizability-prior table the manuscript reports for the five
-external sources.
+The frozen CrystalWeave reference represents 167,392 ICSD entries and uses a
+32-component PCA basis with 2,939 retained communities. A new structure is
+encoded with the same settings and projected without refitting the scaler,
+PCA, partition or community radii.
 
-This document walks through the two supported entry points.
+This workflow requires the matching revised artifact bundle, whose public
+release is pending. An earlier published feature matrix is incompatible with
+the current encoder. Raw ICSD CIFs are not needed to score new structures
+against a supplied fitted reference.
 
-## Entry point 1 — Project a zip of CIFs
+## Prepare a validated reference
 
-`scripts/analyze_external_cif_zip_frontier.py` is a generic CIF-zip
-projector. It was used for the MatterGen-public release in the
-manuscript; it accepts any other CIF-zip input via the
-`--dataset-label` flag.
+Follow [dashboard setup](../dashboard/README.md) to prepare a local manifest
+from the saved basis, assignments, events, community evidence and figures.
+The preparation command validates the encoder and all loaded artifacts.
+Set `ICSD_DASHBOARD_MANIFEST` to the resulting `manifest.json`.
 
-```bash
-python scripts/analyze_external_cif_zip_frontier.py \
-  --icsd-features         notes/features.npy \
-  --community-assignments notes/icsd_community_assignments/community_assignments_labels3.csv \
-  --cif-zip               /path/to/your-source.zip \
-  --dataset-label         MyNewSource \
-  --exclude-pattern       symmetrized \
-  --n-jobs                16 \
-  --output-dir            notes/external_frontier_runs/MyNewSource_2026
+## Score one CIF or a collection
+
+From the repository root, using the project environment:
+
+```python
+import os
+import sys
+from pathlib import Path
+
+sys.path[:0] = [str(Path("scripts").resolve()), str(Path("dashboard").resolve())]
+from pymatgen.core import Structure
+from frozen_backend import load_bundle, score
+
+bundle = load_bundle(os.environ["ICSD_DASHBOARD_MANIFEST"])
+structure = Structure.from_file("my_structure.cif")
+result = score(structure, bundle)
+print({key: result[key] for key in (
+    "formula", "community", "distance", "threshold", "frontier"
+)})
 ```
 
-Outputs (in `--output-dir`):
+Load the bundle once and call `score` for each structure. Keep your source
+identifier with every result and save parse/feature failures separately.
+Structures must contain 1–256 sites. The encoder uses the average
+crystallographic site skeleton for partial occupancies and preserves their
+occupancy-weighted chemistry. It does not infer a particular local ordering
+of a disordered structure.
 
-- `MyNewSource_frontier_records.csv` — per-CIF table with columns
-  `material_id, zip_member, family, reduced_formula,
-  assigned_community, nearest_centroid_distance, outlier_like,
-  pca1, pca2`
-- `MyNewSource_frontier_summary.json` — aggregate counts, thresholds,
-  frontier rate
-- `MyNewSource_frontier_failures.json` — per-CIF parse / embedding
-  errors
-- `MyNewSource_frontier_pca.png` — overlay scatter on the ICSD basin
+The backend validates the feature version, source hashes, projection state,
+row identities and partition. Changing the encoder requires a newly matched
+reference, rather than relabelling the old bundle's provenance.
 
-The schema of the records CSV matches what the production five
-sources emit, so any downstream script that consumes a
-`*_frontier_records.csv` will work on your output unchanged.
+## Interpret the output
 
-## Entry point 2 — Reuse one of the per-source producers
+`community` identifies the nearest centroid. `distance` is its Euclidean
+distance in all 32 PCA components; `threshold` is that community's p95 member
+distance. `frontier` is true when `distance > threshold`; equality is in basin.
+`xy` contains the first two components for display. A visually nearby point in
+a two-dimensional plot need not be nearby in the full scoring space.
 
-If your structures come from a structured source (a database with a
-specific API or schema rather than loose CIFs), the per-source
-producers are easier templates than the generic CIF-zip:
+The result also contains membership size, community birth information,
+feature diagnostics and a continuous historical-accessibility coordinate.
+The continuous coordinate is descriptive and is not a calibrated synthesis
+probability. Family descriptions summarize communities rather than certify
+an uploaded structure's atomic identity.
 
-- `analyze_mp_frontier.py` — Materials Project API
-- `analyze_jarvis_frontier.py` — JARVIS-DFT figshare JSON
-- `analyze_alexandria_frontier.py` — Alexandria bz2 JSON shards
-- `analyze_gnome_frontier.py` — GNoME public-release zip
+## Reproduce the fixed external cohorts
 
-Each is ~200–300 lines, structured as: (1) source-specific loader,
-(2) shared featurization and projection, (3) shared classification.
-The shared parts live in `frontier_common.py` (centroids, thresholds,
-parsing). Forking one of these is the path to integrating with a
-non-CIF data source.
-
-## What "in-basin" means
-
-A projected structure is classified `outlier_like = True` (frontier)
-if its nearest-centroid distance in the 32-D PCA basis exceeds the
-**per-community** 95th-percentile within-community centroid distance
-for its assigned community. This is the per-community threshold
-convention used uniformly in Figures 3c and 4 of the manuscript and
-in the composition-matched control in SI §S7.
-
-If you need the legacy pooled-global-threshold convention (single
-scalar `τ` computed as the 95th percentile of within-community
-distances pooled across all communities — the convention used in
-an earlier development version of this work), it can be obtained
-from the same records CSV by re-classifying records with
-`nearest_centroid_distance ≤ pooled_p95_threshold`. The pooled
-threshold is recorded in `notes/per_community_thresholds_fullmap_p95.json`.
-
-## Producing the synthesizability-prior quadrant for your source
-
-Once you have `MyNewSource_frontier_records.csv`, run:
+`scripts/regenerate_external_projection.py` reads the frozen cohort IDs and
+local structures for GNoME, MatterGen, MP, JARVIS or Alexandria. For example:
 
 ```bash
-python scripts/analyze_formula_synth_prior.py \
-  --icsd-formulas-dir notes/icsd_first_report_formulas \
-  --source MyNewSource notes/external_frontier_runs/MyNewSource_2026/MyNewSource_frontier_records.csv \
-  --per-community-thresholds notes/per_community_thresholds_fullmap_p95.json \
-  --output-summary notes/MyNewSource_formula_synth_prior_summary.json \
-  --output-table   notes/MyNewSource_formula_synth_prior_table.md
+python scripts/regenerate_external_projection.py \
+  --source mattergen \
+  --source-path /path/to/mattergen-release.zip \
+  --historical-records /path/to/frozen-mattergen-records.csv \
+  --basis notes/feature_repair_2026_09/downstream/reference_basis/projection_basis.npz \
+  --out-dir output/mattergen \
+  --n-jobs 8
 ```
 
-This emits the same 4-cell quadrant table the manuscript reports for
-the five canonical sources, with Wilson 95% confidence intervals.
+This command reproduces a declared sample; it is not a sampler for an arbitrary
+new library. Use the manifest's matching source release and cohort table.
+Older generic `analyze_*_frontier.py` commands retain historical paths and
+threshold conventions; the frozen backend and regeneration command above are
+the current scoring entry points.
 
-## Producing a calibrated held-out comparison against your source
+## Compare representations and formula precedent
 
-To put your source against held-out ICSD at the 1990/2000/2010
-cutoffs (the manuscript's Figure 3c bar chart, plus a new column for
-your source), run `analyze_composition_matched_ai.py` with your
-records CSV passed as `--ai-source MyNewSource <path>`.
+Each alternative representation needs its own encoder, fitted transform,
+partition and member-radius calibration. The two Graphlet maps also have
+separate frozen histogram bins and neighbor rules. Keep successful IDs when
+joining maps, and report failed encodings and population differences.
 
-The exact invocation is in the production SLURM wrapper
-`scripts/tacc/run_composition_matched_ai_5src_skxdev.sh`; add a sixth
-`--ai-source MyNewSource <path>` line to that command.
-
-## What you'll need
-
-To run any of the above end-to-end:
-
-- The Zenodo bundle (specifically `features.npy`,
-  `community_assignments_labels3.csv`, and
-  `per_community_thresholds_fullmap_p95.json`)
-- The conda environment from `environment.yml`
-- The CIF/structure input for your source
-
-You do NOT need:
-
-- An ICSD license (the frozen-ICSD reference frame is in the Zenodo
-  bundle as embeddings + integer IDs; raw ICSD CIFs are not
-  redistributed)
-- A TACC allocation (the projection of one external source against
-  the frozen frame takes minutes-to-tens-of-minutes on a laptop,
-  depending on source size and featurization cost)
-
-## Citing this if you use it
-
-If you publish a comparison of your new source against the ICSD
-reference frame using these scripts, please cite the manuscript
-(DOI to be assigned at publication) and the Zenodo data deposit
-([10.5281/zenodo.20046302](https://doi.org/10.5281/zenodo.20046302)).
+Formula precedent is computed separately. Use the canonical formula-layer
+utilities and occupancy-aware reference under
+`notes/feature_repair_2026_09/downstream/formula_layers/`; direct equality of
+pymatgen display strings is not the composition test. A formula/structure
+quadrant reports two forms of experimental precedent, not a calibrated
+synthesis-success rate. See [SCHEMA.md](SCHEMA.md) for the formula layers,
+nearest-ICSD ElMD and separate disorder-aware matching analysis.

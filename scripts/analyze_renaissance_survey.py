@@ -23,7 +23,6 @@ double perovskites for spintronics 1998, etc.) appear in the top hits?
 """
 from __future__ import annotations
 
-import argparse
 import csv
 import json
 from collections import Counter, defaultdict
@@ -34,8 +33,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
-from frontier_common import require_zenodo_file
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -48,7 +45,7 @@ OUT_TABLE_JSON = REPO / "notes/renaissance_survey_top.json"
 OUT_TABLE_MD = REPO / "notes/renaissance_survey_top.md"
 
 # Renaissance-survey tuning constants. Justification documented in
-# paper/supporting_information.md §S1.5 ("Visualization tuning parameters").
+# the Supporting Information (visualization and survey parameters).
 N_MIN = 50
 """Minimum community size to enter the survey. Below 50 members a community
 has too little post-event mass to distinguish a genuine fold-change from
@@ -148,45 +145,13 @@ def best_event_year(year_hist: Counter, event_years: list[int], window: int) -> 
     return best["event_year"], best
 
 
-def parse_args() -> argparse.Namespace:
-    """CLI overrides for input/output paths. Defaults match the production
-    layout (notes/... in the working repo + the standard four cutoff splits).
-    Useful when the Zenodo bundle is unpacked elsewhere or the user wants to
-    redirect outputs to a sandbox."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--community-assignments", default=str(COMMUNITY_ASSIGN),
-                        help="Path to community_assignments_labels3.csv.")
-    parser.add_argument("--post-cutoff-dir", action="append", default=None,
-                        help="Per-cutoff first-report directory. Repeatable. "
-                             "Defaults to the four production splits 1980/1990/2000/2010.")
-    parser.add_argument("--output-fig", default=str(OUT_FIG), help="Output PNG path.")
-    parser.add_argument("--output-table-json", default=str(OUT_TABLE_JSON),
-                        help="Output JSON path for the top-K survey table.")
-    parser.add_argument("--output-table-md", default=str(OUT_TABLE_MD),
-                        help="Output Markdown path for the top-K survey table.")
-    return parser.parse_args()
-
-
 def main() -> int:
-    args = parse_args()
-    community_assign = require_zenodo_file(
-        args.community_assignments,
-        what="canonical 167.5K-row ICSD community assignments table",
-    )
-    # post_cutoff_dirs is best-effort (used only to enrich the table with
-    # reduced-formula labels via load_formula_lookup, which itself skips
-    # missing dirs). Don't gate on it.
-    post_cutoff_dirs = [Path(p) for p in (args.post_cutoff_dir or POST_CUTOFF_DIRS)]
-    out_fig = Path(args.output_fig)
-    out_table_json = Path(args.output_table_json)
-    out_table_md = Path(args.output_table_md)
-
     print("loading community assignments...", flush=True)
-    records = load_community_assignments(community_assign)
+    records = load_community_assignments(COMMUNITY_ASSIGN)
     print(f"  {len(records)} (icsd_id, year, community) rows after dropping noise", flush=True)
 
     print("loading formula lookup...", flush=True)
-    formula_lookup = load_formula_lookup(post_cutoff_dirs)
+    formula_lookup = load_formula_lookup(POST_CUTOFF_DIRS)
     print(f"  {len(formula_lookup)} cif_id -> reduced_formula entries", flush=True)
 
     # Per-community year histograms
@@ -219,8 +184,7 @@ def main() -> int:
     top = results[:TOP_K]
 
     # Write JSON + markdown
-    out_table_json.parent.mkdir(parents=True, exist_ok=True)
-    out_table_json.write_text(json.dumps({"top": top, "n_eligible": len(eligible),
+    OUT_TABLE_JSON.write_text(json.dumps({"top": top, "n_eligible": len(eligible),
                                            "window": WINDOW, "event_years": [min(EVENT_YEARS), max(EVENT_YEARS)]},
                                           indent=2, default=str))
     md_lines = [
@@ -241,10 +205,9 @@ def main() -> int:
             f"{r['n_pre']} | {r['n_post']} | {r['rate_pre']:.1f} | {r['rate_post']:.1f} | "
             f"{fold_str} | {r['score']:.1f} | {formulas} |"
         )
-    out_table_md.parent.mkdir(parents=True, exist_ok=True)
-    out_table_md.write_text("\n".join(md_lines) + "\n")
-    print(f"wrote {out_table_json}")
-    print(f"wrote {out_table_md}")
+    OUT_TABLE_MD.write_text("\n".join(md_lines) + "\n")
+    print(f"wrote {OUT_TABLE_JSON}")
+    print(f"wrote {OUT_TABLE_MD}")
 
     # Also plot the year histograms of the top 8
     fig, axes = plt.subplots(4, 2, figsize=(13, 12), dpi=150, sharex=True)
@@ -280,10 +243,10 @@ def main() -> int:
     fig.suptitle(f"Top 8 communities by birth-year step-change (size >= {N_MIN}, ±{WINDOW}-yr window)",
                  fontsize=11, fontweight="bold", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    out_fig.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_fig, dpi=150, bbox_inches="tight")
+    OUT_FIG.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(OUT_FIG, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"wrote {out_fig}")
+    print(f"wrote {OUT_FIG}")
     return 0
 
 

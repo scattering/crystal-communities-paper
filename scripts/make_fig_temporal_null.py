@@ -22,8 +22,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from frontier_common import require_zenodo_file
-
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -34,11 +32,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    summary_path = require_zenodo_file(
-        args.summary_json,
-        what="year-shuffle null summary driving the temporal-null figure",
-    )
-    summary = json.loads(summary_path.read_text())
+    summary = json.loads(Path(args.summary_json).read_text())
     by_decade = summary["by_decade"]
     decades = list(by_decade.keys())
     decade_year = [int(d[:-1]) for d in decades]

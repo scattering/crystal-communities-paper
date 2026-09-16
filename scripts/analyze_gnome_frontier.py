@@ -33,7 +33,7 @@ Outputs (under ``--output-dir``):
   ``gnome_frontier_failures.json``  per-CIF parse / embedding errors.
   ``gnome_frontier_pca.png``        overlay scatter for QA.
 
-Manuscript invocation: ``scripts/tacc/run_gnome_frontier_skxdev.sh``.
+The original manuscript invocation used a TACC batch wrapper that is not distributed.
 """
 from __future__ import annotations
 
@@ -58,6 +58,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from icsd_densify_worker import build_structure_embedding
+from feature_provenance import require_feature_version
 
 
 GNOME_ZIP: zipfile.ZipFile | None = None
@@ -210,6 +211,7 @@ def plot_frontier(
 
 def main() -> int:
     args = parse_args()
+    require_feature_version(args.icsd_features)
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

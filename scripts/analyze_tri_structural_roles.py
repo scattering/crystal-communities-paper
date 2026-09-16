@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 from collections import Counter, defaultdict
@@ -50,6 +51,11 @@ import networkx as nx
 import numpy as np
 from pymatgen.core import Composition
 from sklearn.neighbors import NearestNeighbors
+
+from formula_conventions import normalized_fraction_key
+
+
+FormulaIdentity = tuple[tuple[str, ...], tuple[float, ...]]
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,6 +78,24 @@ def reduce_formula(text: str) -> str | None:
         return Composition(text).reduced_formula
     except Exception:
         return None
+
+
+def formula_identity(text: str) -> FormulaIdentity | None:
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return normalized_fraction_key(text, decimals=12)
+    except Exception:
+        return None
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def scalarize(value: object) -> float | int | None:
@@ -136,14 +160,18 @@ def entropy_from_counts(counts: Counter[int]) -> float:
     return ent
 
 
-def load_tri_existing(path: Path) -> dict[str, dict[str, float | int]]:
+def load_tri_existing(path: Path) -> dict[FormulaIdentity, dict[str, object]]:
     data = json.loads(path.read_text())
-    out: dict[str, dict[str, float | int]] = {}
+    out: dict[FormulaIdentity, dict[str, object]] = {}
     for formula, attrs in data.items():
         reduced = reduce_formula(formula)
-        if reduced is None:
+        identity = formula_identity(formula)
+        if reduced is None or identity is None:
             continue
-        out[reduced] = {
+        if identity in out:
+            raise ValueError(f"TRI formulas collide under normalized identity: {formula!r}")
+        out[identity] = {
+            "formula": reduced,
             "tri_formula_raw": formula,
             "tri_deg": float(scalarize(attrs.get("deg")) or 0.0),
             "tri_deg_cent": float(scalarize(attrs.get("deg_cent")) or 0.0),
@@ -165,8 +193,10 @@ def load_icsd_index(path: Path) -> dict[int, dict[str, object]]:
                 icsd_id = int(row["cif_names"])
             except Exception:
                 continue
-            formula = reduce_formula(row.get("name", ""))
-            if formula is None:
+            raw_formula = row.get("name", "")
+            formula = reduce_formula(raw_formula)
+            identity = formula_identity(raw_formula)
+            if formula is None or identity is None:
                 continue
             year = None
             try:
@@ -175,7 +205,8 @@ def load_icsd_index(path: Path) -> dict[int, dict[str, object]]:
                 pass
             out[icsd_id] = {
                 "formula": formula,
-                "raw_formula": row.get("name", ""),
+                "formula_identity": identity,
+                "raw_formula": raw_formula,
                 "year": year,
             }
     return out
@@ -201,11 +232,12 @@ def build_neighbors(X: np.ndarray, k: int, mutual_knn: bool) -> list[list[int]]:
     nbrs = NearestNeighbors(n_neighbors=min(k + 1, len(X)), metric="euclidean", algorithm="auto")
     nbrs.fit(X)
     _, indices = nbrs.kneighbors(X)
-    neighbor_sets = [set(row[1:]) for row in indices]
+    neighbors = [[int(j) for j in js if int(j) != i][:k] for i, js in enumerate(indices)]
+    neighbor_sets = [set(row) for row in neighbors]
     out: list[list[int]] = []
     for i in range(len(X)):
         row = []
-        for j in indices[i, 1:]:
+        for j in neighbors[i]:
             j = int(j)
             if mutual_knn and i not in neighbor_sets[j]:
                 continue
@@ -234,42 +266,43 @@ def main() -> int:
             continue
         community_birth[community] = min(year, community_birth.get(community, year))
 
-    formula_nodes: dict[str, list[int]] = defaultdict(list)
-    formula_years: dict[str, list[int]] = defaultdict(list)
-    formula_communities: dict[str, list[int]] = defaultdict(list)
+    formula_nodes: dict[FormulaIdentity, list[int]] = defaultdict(list)
+    formula_years: dict[FormulaIdentity, list[int]] = defaultdict(list)
+    formula_communities: dict[FormulaIdentity, list[int]] = defaultdict(list)
 
-    formula_for_node: list[str | None] = [None] * len(rows)
+    formula_for_node: list[FormulaIdentity | None] = [None] * len(rows)
     community_for_node: list[int] = [int(r["community"]) for r in rows]
     for idx, row in enumerate(rows):
         meta = icsd_index.get(int(row["icsd_id"]))
         if meta is None:
             continue
-        formula = str(meta["formula"])
-        formula_for_node[idx] = formula
-        formula_nodes[formula].append(idx)
+        identity = meta["formula_identity"]
+        formula_for_node[idx] = identity
+        formula_nodes[identity].append(idx)
         if meta["year"] is not None:
-            formula_years[formula].append(int(meta["year"]))
-        formula_communities[formula].append(int(row["community"]))
+            formula_years[identity].append(int(meta["year"]))
+        formula_communities[identity].append(int(row["community"]))
 
     shared_formulas = sorted(set(tri) & set(formula_nodes))
+    shared_formula_set = set(shared_formulas)
 
     neighbors = build_neighbors(X, args.k, args.mutual_knn)
 
-    formula_adj: dict[str, set[str]] = defaultdict(set)
-    formula_bridge_hits: Counter[str] = Counter()
-    formula_bridge_total: Counter[str] = Counter()
-    formula_cross_hits: Counter[str] = Counter()
+    formula_adj: dict[FormulaIdentity, set[FormulaIdentity]] = defaultdict(set)
+    formula_bridge_hits: Counter[FormulaIdentity] = Counter()
+    formula_bridge_total: Counter[FormulaIdentity] = Counter()
+    formula_cross_hits: Counter[FormulaIdentity] = Counter()
 
     for i, nbrs in enumerate(neighbors):
         fi = formula_for_node[i]
-        if fi is None or fi not in shared_formulas:
+        if fi is None or fi not in shared_formula_set:
             continue
         ci = community_for_node[i]
         formula_bridge_total[fi] += 1
         nbr_communities = set()
         for j in nbrs:
             fj = formula_for_node[j]
-            if fj is None or fj not in shared_formulas:
+            if fj is None or fj not in shared_formula_set:
                 continue
             if fi != fj:
                 formula_adj[fi].add(fj)
@@ -291,16 +324,17 @@ def main() -> int:
 
     clustering = nx.clustering(G)
     core_num = nx.core_number(G) if G.number_of_edges() > 0 else {n: 0 for n in G.nodes()}
+    community_sizes = Counter(community_for_node)
 
     records: list[dict[str, object]] = []
-    for formula in shared_formulas:
-        comm_counts = Counter(c for c in formula_communities[formula] if c >= 0)
+    for identity in shared_formulas:
+        comm_counts = Counter(c for c in formula_communities[identity] if c >= 0)
         dominant_comm = comm_counts.most_common(1)[0][0] if comm_counts else None
         dominant_birth = community_birth.get(dominant_comm) if dominant_comm is not None else None
         first_comm_birth = min((community_birth[c] for c in comm_counts if c in community_birth), default=None)
-        first_year = min(formula_years[formula]) if formula_years[formula] else None
-        outlier_count = sum(1 for c in formula_communities[formula] if c < 0)
-        total_count = len(formula_nodes[formula])
+        first_year = min(formula_years[identity]) if formula_years[identity] else None
+        outlier_count = sum(1 for c in formula_communities[identity] if c < 0)
+        total_count = len(formula_nodes[identity])
         dominant_fraction = (comm_counts[dominant_comm] / total_count) if dominant_comm is not None and total_count else 0.0
         stepping = None
         if first_year is not None and first_comm_birth is not None:
@@ -313,25 +347,25 @@ def main() -> int:
 
         records.append(
             {
-                "formula": formula,
-                **tri[formula],
+                "formula": tri[identity]["formula"],
+                **{k: v for k, v in tri[identity].items() if k != "formula"},
                 "icsd_n_entries": total_count,
                 "icsd_first_year": first_year,
-                "icsd_n_communities": len(set(c for c in formula_communities[formula] if c >= 0)),
+                "icsd_n_communities": len(set(c for c in formula_communities[identity] if c >= 0)),
                 "icsd_fragmentation_entropy": entropy_from_counts(comm_counts),
                 "icsd_dominant_fraction": dominant_fraction,
                 "icsd_dominant_community": dominant_comm,
-                "icsd_dominant_community_size": sum(1 for r in rows if int(r["community"]) == dominant_comm) if dominant_comm is not None else 0,
+                "icsd_dominant_community_size": community_sizes.get(dominant_comm, 0) if dominant_comm is not None else 0,
                 "icsd_dominant_community_birth": dominant_birth,
                 "icsd_first_associated_community_birth": first_comm_birth,
                 "icsd_outlier_fraction": outlier_count / total_count if total_count else 0.0,
-                "icsd_formula_graph_degree": int(G.degree(formula)),
-                "icsd_formula_graph_clustering": float(clustering.get(formula, 0.0)),
-                "icsd_formula_graph_core_number": int(core_num.get(formula, 0)),
-                "icsd_formula_cross_community_rate": formula_cross_hits[formula] / formula_bridge_total[formula] if formula_bridge_total[formula] else 0.0,
-                "icsd_formula_bridge_rate": formula_bridge_hits[formula] / formula_bridge_total[formula] if formula_bridge_total[formula] else 0.0,
-                "tri_to_icsd_first_year_lag": (first_year - int(tri[formula]["tri_discovery"])) if first_year is not None and tri[formula]["tri_discovery"] else None,
-                "tri_to_dominant_community_birth_lag": (dominant_birth - int(tri[formula]["tri_discovery"])) if dominant_birth is not None and tri[formula]["tri_discovery"] else None,
+                "icsd_formula_graph_degree": int(G.degree(identity)),
+                "icsd_formula_graph_clustering": float(clustering.get(identity, 0.0)),
+                "icsd_formula_graph_core_number": int(core_num.get(identity, 0)),
+                "icsd_formula_cross_community_rate": formula_cross_hits[identity] / formula_bridge_total[identity] if formula_bridge_total[identity] else 0.0,
+                "icsd_formula_bridge_rate": formula_bridge_hits[identity] / formula_bridge_total[identity] if formula_bridge_total[identity] else 0.0,
+                "tri_to_icsd_first_year_lag": (first_year - int(tri[identity]["tri_discovery"])) if first_year is not None and tri[identity]["tri_discovery"] else None,
+                "tri_to_dominant_community_birth_lag": (dominant_birth - int(tri[identity]["tri_discovery"])) if dominant_birth is not None and tri[identity]["tri_discovery"] else None,
                 "stepping_stone_class": stepping,
             }
         )
@@ -354,6 +388,15 @@ def main() -> int:
         return xs, ys
 
     summary = {
+        "formula_identity": "element-sorted normalized atomic fractions rounded to 12 decimal places",
+        "input_sha256": {
+            "icsd_index": sha256_file(Path(args.icsd_index)),
+            "community_assignments": sha256_file(Path(args.community_assignments)),
+            "features_file": sha256_file(Path(args.features_file)),
+            "tri_existing_materials": sha256_file(
+                Path(args.tri_dir) / "data" / "NetworkParams_ExistingMaterials_v1.1.json"
+            ),
+        },
         "n_shared_formulas": len(records),
         "corr_tri_deg_vs_formula_graph_degree": spearman(*valid_xy("tri_deg", "icsd_formula_graph_degree")),
         "corr_tri_deg_vs_formula_graph_clustering": spearman(*valid_xy("tri_deg", "icsd_formula_graph_clustering")),

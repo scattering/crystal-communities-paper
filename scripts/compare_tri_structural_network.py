@@ -22,11 +22,17 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
 from pymatgen.core import Composition
+
+from formula_conventions import normalized_fraction_key
+
+
+FormulaIdentity = tuple[tuple[str, ...], tuple[float, ...]]
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,6 +53,24 @@ def reduce_formula(text: str) -> str | None:
         return Composition(text).reduced_formula
     except Exception:
         return None
+
+
+def formula_identity(text: str) -> FormulaIdentity | None:
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return normalized_fraction_key(text, decimals=12)
+    except Exception:
+        return None
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def rankdata(values: list[float]) -> list[float]:
@@ -85,9 +109,9 @@ def spearman(x: list[float], y: list[float]) -> float | None:
     return pearson(rankdata(x), rankdata(y))
 
 
-def load_tri_existing(path: Path) -> dict[str, dict[str, float | int]]:
+def load_tri_existing(path: Path) -> dict[FormulaIdentity, dict[str, object]]:
     data = json.loads(path.read_text())
-    out: dict[str, dict[str, float | int]] = {}
+    out: dict[FormulaIdentity, dict[str, object]] = {}
 
     def scalarize(value: object) -> float | int | None:
         if isinstance(value, list):
@@ -107,8 +131,11 @@ def load_tri_existing(path: Path) -> dict[str, dict[str, float | int]]:
 
     for formula, attrs in data.items():
         reduced = reduce_formula(formula)
-        if reduced is None:
+        identity = formula_identity(formula)
+        if reduced is None or identity is None:
             continue
+        if identity in out:
+            raise ValueError(f"TRI formulas collide under normalized identity: {formula!r}")
         deg = scalarize(attrs.get("deg", 0.0))
         deg_cent = scalarize(attrs.get("deg_cent", 0.0))
         eigen_cent = scalarize(attrs.get("eigen_cent", 0.0))
@@ -116,7 +143,8 @@ def load_tri_existing(path: Path) -> dict[str, dict[str, float | int]]:
         deg_neigh = scalarize(attrs.get("deg_neigh", 0.0))
         shortest_path = scalarize(attrs.get("shortest_path", 0.0))
         discovery = scalarize(attrs.get("discovery", 0))
-        out[reduced] = {
+        out[identity] = {
+            "formula": reduced,
             "tri_formula_raw": formula,
             "deg": float(deg) if deg is not None else 0.0,
             "deg_cent": float(deg_cent) if deg_cent is not None else 0.0,
@@ -138,15 +166,22 @@ def load_icsd_index(path: Path) -> dict[int, dict[str, object]]:
                 icsd_id = int(row["cif_names"])
             except Exception:
                 continue
-            formula = reduce_formula(row.get("name", ""))
-            if formula is None:
+            raw_formula = row.get("name", "")
+            formula = reduce_formula(raw_formula)
+            identity = formula_identity(raw_formula)
+            if formula is None or identity is None:
                 continue
             year = None
             try:
                 year = int(row["publication_year"])
             except Exception:
                 pass
-            out[icsd_id] = {"formula": formula, "raw_formula": row.get("name", ""), "year": year}
+            out[icsd_id] = {
+                "formula": formula,
+                "formula_identity": identity,
+                "raw_formula": raw_formula,
+                "year": year,
+            }
     return out
 
 
@@ -170,42 +205,42 @@ def main() -> int:
     community_map = load_assignment_map(Path(args.community_assignments), "community")
     hdbscan_map = load_assignment_map(Path(args.hdbscan_assignments), "cluster")
 
-    formula_entries: dict[str, list[int]] = defaultdict(list)
-    formula_years: dict[str, list[int]] = defaultdict(list)
-    formula_communities: dict[str, list[int]] = defaultdict(list)
-    formula_hdbscan: dict[str, list[int]] = defaultdict(list)
+    formula_entries: dict[FormulaIdentity, list[int]] = defaultdict(list)
+    formula_years: dict[FormulaIdentity, list[int]] = defaultdict(list)
+    formula_communities: dict[FormulaIdentity, list[int]] = defaultdict(list)
+    formula_hdbscan: dict[FormulaIdentity, list[int]] = defaultdict(list)
 
     for icsd_id, meta in icsd.items():
-        formula = str(meta["formula"])
-        formula_entries[formula].append(icsd_id)
+        identity = meta["formula_identity"]
+        formula_entries[identity].append(icsd_id)
         if meta["year"] is not None:
-            formula_years[formula].append(int(meta["year"]))
+            formula_years[identity].append(int(meta["year"]))
         if icsd_id in community_map:
-            formula_communities[formula].append(community_map[icsd_id])
+            formula_communities[identity].append(community_map[icsd_id])
         if icsd_id in hdbscan_map:
-            formula_hdbscan[formula].append(hdbscan_map[icsd_id])
+            formula_hdbscan[identity].append(hdbscan_map[icsd_id])
 
     shared_formulas = sorted(set(tri) & set(formula_entries))
     community_sizes = Counter(community_map.values())
     hdbscan_sizes = Counter(hdbscan_map.values())
 
     rows: list[dict[str, object]] = []
-    for formula in shared_formulas:
-        communities = formula_communities.get(formula, [])
-        clusters = formula_hdbscan.get(formula, [])
+    for identity in shared_formulas:
+        communities = formula_communities.get(identity, [])
+        clusters = formula_hdbscan.get(identity, [])
         dominant_community = Counter(communities).most_common(1)[0][0] if communities else None
         dominant_cluster = Counter(clusters).most_common(1)[0][0] if clusters else None
         row = {
-            "formula": formula,
-            "tri_formula_raw": tri[formula]["tri_formula_raw"],
-            "tri_discovery": tri[formula]["tri_discovery"],
-            "tri_deg": tri[formula]["deg"],
-            "tri_deg_cent": tri[formula]["deg_cent"],
-            "tri_eigen_cent": tri[formula]["eigen_cent"],
-            "tri_clus_coeff": tri[formula]["clus_coeff"],
-            "icsd_n_entries": len(formula_entries[formula]),
-            "icsd_first_year": min(formula_years[formula]) if formula_years[formula] else None,
-            "icsd_last_year": max(formula_years[formula]) if formula_years[formula] else None,
+            "formula": tri[identity]["formula"],
+            "tri_formula_raw": tri[identity]["tri_formula_raw"],
+            "tri_discovery": tri[identity]["tri_discovery"],
+            "tri_deg": tri[identity]["deg"],
+            "tri_deg_cent": tri[identity]["deg_cent"],
+            "tri_eigen_cent": tri[identity]["eigen_cent"],
+            "tri_clus_coeff": tri[identity]["clus_coeff"],
+            "icsd_n_entries": len(formula_entries[identity]),
+            "icsd_first_year": min(formula_years[identity]) if formula_years[identity] else None,
+            "icsd_last_year": max(formula_years[identity]) if formula_years[identity] else None,
             "icsd_n_communities": len(set(communities)),
             "icsd_n_hdbscan_clusters": len(set(clusters)),
             "dominant_community": dominant_community,
@@ -231,6 +266,15 @@ def main() -> int:
     tri_year_align = spearman([float(r["tri_discovery"]) for r in rows_with_year], [float(r["icsd_first_year"]) for r in rows_with_year])
 
     summary = {
+        "formula_identity": "element-sorted normalized atomic fractions rounded to 12 decimal places",
+        "input_sha256": {
+            "icsd_index": sha256_file(Path(args.icsd_index)),
+            "community_assignments": sha256_file(Path(args.community_assignments)),
+            "hdbscan_assignments": sha256_file(Path(args.hdbscan_assignments)),
+            "tri_existing_materials": sha256_file(
+                tri_dir / "data" / "NetworkParams_ExistingMaterials_v1.1.json"
+            ),
+        },
         "n_tri_existing_formulas": len(tri),
         "n_icsd_formulas_total": len(formula_entries),
         "n_shared_formulas": len(rows),

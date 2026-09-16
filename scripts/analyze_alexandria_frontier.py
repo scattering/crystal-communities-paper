@@ -9,7 +9,7 @@ Caveats:
   - Alexandria entries do NOT carry direct ICSD provenance flags. We filter
     by energy_above_hull > 0 (off the convex hull → likely-predicted) as a
     proxy for "not experimentally known," and additionally deduplicate
-    against the ICSD reduced_formula+space_group set if --icsd-dedup-csv
+    against the ICSD normalized-formula+space-group set if --icsd-dedup-csv
     is provided.
   - We sample from a small number of bz2 files (default: 1 file, 100K
     entries) rather than streaming the full 58-file release. For 5K-scale
@@ -38,6 +38,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from icsd_densify_worker import build_structure_embedding
+from feature_provenance import require_feature_version
 
 
 ALEXANDRIA_BASE = "https://alexandria.icams.rub.de/data/pbe/2025.07.02"
@@ -89,16 +90,19 @@ from frontier_common import (
     load_community_rows,
     centroid_thresholds,
 )
+from formula_conventions import scale_invariant_formula_key
 
 
-def load_icsd_dedup_keys(path: Path) -> set[tuple[str, int]]:
-    keys: set[tuple[str, int]] = set()
+def load_icsd_dedup_keys(
+    path: Path,
+) -> set[tuple[tuple[tuple[str, int], ...], int]]:
+    keys: set[tuple[tuple[tuple[str, int], ...], int]] = set()
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             f = (row.get("reduced_formula") or "").strip()
             s = parse_int(row.get("spg") or row.get("space_group") or "")
             if f and s is not None:
-                keys.add((f, s))
+                keys.add((scale_invariant_formula_key(f), s))
     return keys
 
 
@@ -187,6 +191,7 @@ def featurize_alex_record(args_tuple) -> tuple[bool, AlexRecord, np.ndarray | No
 
 def main() -> int:
     args = parse_args()
+    require_feature_version(args.icsd_features)
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -206,7 +211,7 @@ def main() -> int:
     communities, centroids, threshold = centroid_thresholds(Xp, community_labels)
     print(f"trained {len(communities)} community thresholds; p95 = {threshold:.4f}", flush=True)
 
-    icsd_dedup: set[tuple[str, int]] = set()
+    icsd_dedup: set[tuple[tuple[tuple[str, int], ...], int]] = set()
     if args.icsd_dedup_csv:
         icsd_dedup = load_icsd_dedup_keys(Path(args.icsd_dedup_csv))
         print(f"loaded {len(icsd_dedup)} (formula, spg) ICSD dedup keys", flush=True)
@@ -225,7 +230,9 @@ def main() -> int:
                 continue
             if r.structure_dict.get("sites") and len(r.structure_dict["sites"]) > args.max_sites:
                 continue
-            if icsd_dedup and (r.reduced_formula, r.spg) in icsd_dedup:
+            if icsd_dedup and (
+                scale_invariant_formula_key(r.reduced_formula), r.spg
+            ) in icsd_dedup:
                 continue
             candidates.append(r)
     print(f"after filters: {len(candidates)} candidates", flush=True)

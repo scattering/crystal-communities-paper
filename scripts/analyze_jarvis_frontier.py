@@ -30,6 +30,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from icsd_densify_worker import build_structure_embedding
+from feature_provenance import require_feature_version
 
 
 @dataclass
@@ -103,6 +104,7 @@ def featurize_jarvis_record(args_tuple) -> tuple[bool, JarvisRecord, np.ndarray 
 
 def main() -> int:
     args = parse_args()
+    require_feature_version(args.icsd_features)
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

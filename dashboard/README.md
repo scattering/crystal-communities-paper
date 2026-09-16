@@ -1,126 +1,91 @@
-# Interactive dashboard
+# CrystalWeave dashboard
 
-A [Plotly Dash](https://dash.plotly.com/) application for exploring the
-167,500-entry ICSD structural embedding interactively and for scoring
-your own CIF against the frozen ICSD reference frame.
+The Dash application explores the saved 167,392-entry CrystalWeave map and its
+2,939 retained communities. It shows checked community descriptions, temporal
+context, representative records and current figures, and can score an uploaded
+CIF against the same frozen 32-component reference.
 
-Two views:
+The app loads a version-bound artifact manifest. Encoder or data mismatches
+disable scoring. No new PCA or community partition is fitted at startup.
+The source in this checkout and the separately hosted service are independent;
+a source update alone does not update the deployment.
 
-- **Overview** — the community map (structural basins), per-community
-  members, year distributions, curated/inferred family labels, and the
-  five external-source overlays used in the manuscript.
-- **Score a CIF** — upload a CIF; the app computes its structural
-  embedding with the same `build_structure_embedding(...)` used in the
-  manuscript, projects it into the frozen ICSD map, and returns the
-  nearest structural basin, centroid distance, the community's
-  95th-percentile threshold, the in-basin vs frontier classification,
-  the structural-accessibility score 𝒜ᵢ, and a 2-D placement on a
-  sampled historical background. The result also includes a
-  `structural_match_tier` (categorical) and `small_community_caveat`
-  (boolean) — see [Interpreting the score result](#interpreting-the-score-result) below.
+## Install and prepare
 
-`index.html` is a static landing page (figure hub) that can be served
-alongside or independently of the Dash app.
-
-## Requirements
-
-- The conda environment from the repository root `environment.yml`
-  (`conda env create -f environment.yml && conda activate
-  crystal-communities`). **CIF upload-scoring requires `matminer`**
-  (pinned in `environment.yml`); without it the structure embedding
-  silently falls back to the wrong dimensionality and scoring fails
-  with a feature-count mismatch.
-- The Zenodo data bundle (see the repository `README.md`). The app
-  loads the frozen-map artifacts on startup and holds them in memory.
-
-## Running it locally
-
-The three core artifacts are supplied through environment variables so
-the app can be pointed at a Zenodo bundle unpacked anywhere. From the
-repository root, with the bundle unpacked under `notes/`:
+Use the repository's analysis environment, then install the dashboard packages:
 
 ```bash
-export ICSD_FEATURES_PATH="notes/features.npy"
-export ICSD_COMMUNITY_ASSIGNMENTS_PATH="notes/icsd_community_assignments/community_assignments_labels3.csv"
-export ICSD_NODE_EVENTS_PATH="notes/node_temporal_events.csv"   # schema: docs/SCHEMA.md
-
-cd dashboard
-python dash_app.py
+python -m pip install -r requirements-dashboard.txt
 ```
 
-Then open <http://localhost:8050>. If the three core paths are not set,
-the app still starts but the CIF-scoring view is disabled and reports
-which variables are missing.
+The matching revised numerical release is awaiting publication. Once those
+artifacts are available locally, prepare a manifest from the repository root:
 
-## Configuration
+```bash
+python scripts/prepare_repaired_dashboard.py \
+  --downstream notes/feature_repair_2026_09/downstream \
+  --production notes/feature_repair_2026_09/full_run_results/production \
+  --pca notes/feature_repair_2026_09/downstream/inputs/features_pca.npy \
+  --figure-dir figures/icsd_densification \
+  --out-dir output/dashboard-bundle
+```
 
-| Variable | Required | Purpose |
-|---|---|---|
-| `ICSD_FEATURES_PATH` | yes | Frozen ICSD matminer feature matrix (`features.npy`). |
-| `ICSD_COMMUNITY_ASSIGNMENTS_PATH` | yes | Canonical community-label table. |
-| `ICSD_NODE_EVENTS_PATH` | yes | Per-node community-birth/attachment events table. |
-| `ICSD_PROTOTYPE_LABELS_PATH` | no | AflowPrototype / CIF systematic-name labels per community. |
-| `ICSD_CANONICAL_LABELS_PATH` | no | Curated family names (defaults to `notes/canonical_family_names_labels3.csv`). |
-| `ICSD_REPRESENTATIVES_PATH` | no | Per-community representative exemplars (defaults to `notes/functional_community_representatives_top20.csv`). |
-| `ICSD_INFERRED_FAMILIES_PATH` | no | Heuristic textbook-family names (defaults to `notes/community_families_inferred.csv`). |
-| `ICSD_COMMUNITY_LAYOUT_PATH` | no | Graph-aware community layout (defaults to `notes/community_layout.csv`); falls back to a PCA scatter if absent. |
-| `ICSD_CIF_DIR` | no | Directory of CIFs keyed by ICSD id; enables the 3Dmol.js centroid view in the drill-down modal. |
-| `ICSD_DEMO_SAMPLE_SIZE` | no | Background sample size for the placement scatter (default `12000`). |
-| `ICSD_DEMO_WL_ITERS` | no | Message-passing rounds for the upload embedding (default `3`, matching production). |
-| `ICSD_DEMO_OBSERVATION_YEAR` | no | Observation-year used for accessibility scoring (default `2025`). |
-| `ICSD_DEMO_RANDOM_SEED` | no | Seed for the background sub-sample (default `42`). |
+`--production` must point to the matching reference directory containing
+`sample_assignments.csv`, `graph/community_assignments.csv` and
+`time/node_temporal_events.csv`. The archive preserves the reference directory shown above.
+The downstream directory supplies the frozen basis, community evidence and
+accessibility summary. Raw ICSD CIFs and the raw feature matrix are not
+required for this dashboard.
 
-The exact bundle filenames are documented in
-[`../docs/SCHEMA.md`](../docs/SCHEMA.md).
+Preparation writes `manifest.json` with relative artifact paths and SHA-256
+hashes, plus `validation.json`. Validation checks encoder settings and hashes,
+reference identities and years, PCA dimensions, partition counts, community
+profiles, representatives and layout. Moving a bundle requires retaining those
+relative paths or regenerating the manifest from the same verified files.
 
-## Interpreting the score result
+## Run locally
 
-`score_structure(...)` returns a dict with the following fields. Two of
-them — `structural_match_tier` and `small_community_caveat` — are
-purely reporting-layer additions; the manuscript's in-basin definition
-(95th-percentile threshold on within-community centroid distances) is
-unchanged.
+```bash
+export ICSD_DASHBOARD_MANIFEST="$PWD/output/dashboard-bundle/manifest.json"
+python dashboard/dash_app.py
+```
 
-| Field | Type | Meaning |
-|---|---|---|
-| `community` | int | Nearest community id (Louvain partition, `labels3` pass). |
-| `community_label` | str | Resolved family name (canonical → inferred → prototype → fallback). |
-| `community_size` | int | Number of training-set members in the community. |
-| `distance` | float | Euclidean distance to the community centroid in the frozen PCA-32 space. |
-| `threshold` | float | The community's 95th-percentile in-basin threshold (paper definition). |
-| `frontier` | bool | `True` iff `distance > threshold` — the manuscript's "out of basin" criterion. **This is the paper-faithful classification.** |
-| `accessibility` | float | Structural-accessibility score 𝒜ᵢ (combines centroid distance with size + age weighting). |
-| `structural_match_tier` | str | Categorical, absolute-distance based: `VERY HIGH` if `distance ≤ 0.5`; `HIGH` if `distance ≤ threshold`; `NEAR` if `distance ≤ 2 × threshold`; `DISTANT` otherwise. |
-| `small_community_caveat` | bool | `True` iff `community_size < 20` or `threshold < 0.1`. Surfaces the small-community statistical-tightness edge case (see below). |
-| `xy` | array | Uploaded structure's 2-D placement on the sampled background. |
-| `centroid_xy` | array | The nearest community's centroid in the same 2-D space. |
+Open <http://localhost:8050>. Without a valid manifest, the app explains the
+missing-data problem and leaves scoring disabled. This command does not deploy
+the application to a server.
 
-### Why the tier + caveat
+| Environment variable | Purpose |
+|---|---|
+| `ICSD_DASHBOARD_MANIFEST` | Required for map exploration and CIF scoring; path to the validated manifest |
+| `ICSD_DEMO_OBSERVATION_YEAR` | Historical-accessibility observation year; default 2019 |
+| `ICSD_DEMO_SAMPLE_SIZE` | Number of reference points displayed in the placement background; default 12,000 |
 
-The manuscript's in-basin classification uses a 95th-percentile
-threshold per community. For very small communities (e.g., ≤20 members
-that are mostly near-duplicate refinements of one parent structure),
-the percentile collapses to near zero as a statistical artifact of the
-small sample. A new structurally near-identical upload can then end up
-formally `frontier=True` despite being centroid-close in absolute terms.
+`index.html` is the static landing page. `frozen_backend.py` exposes the
+`load_bundle` and `score` API used by the application and the
+[new-structure scoring guide](../docs/HOW_TO_EXTEND.md).
 
-The `structural_match_tier` provides a complementary categorical signal
-based on the absolute centroid distance (independent of percentile
-collapse). `small_community_caveat=True` flags the cases where the
-percentile threshold is statistically unreliable and the dashboard
-surfaces a "near-textbook structural identity" annotation in the result
-panel. The `frontier` boolean itself is unchanged from the paper's
-definition; the tier is additive UX, not a redefinition.
+## Scoring fields
 
-The four tier cutoffs (0.5, τ, 2τ) are fixed defaults; the absolute
-0.5 floor is calibrated so that distances at or below it correspond to
-matched-structure near-identity at the level the embedding can resolve
-(empirically: replicate ICSD refinements of the same crystallographic
-entry cluster within < 0.1; structurally near-identical compounds
-within < 0.5; the same family within ~1–3; cross-family at ~5+).
+| Field | Meaning |
+|---|---|
+| `community` | Nearest community centroid in the full 32-component reference |
+| `distance` | Euclidean centroid distance |
+| `threshold` | Assigned community's 95th-percentile member distance |
+| `frontier` | True when distance exceeds the threshold; equality is in basin |
+| `d_over_tau` | Distance divided by threshold, or null for a zero threshold |
+| `community_size` | Number of fitted community members |
+| `community_birth_year` | Earliest dated member; negative when unknown |
+| `accessibility` | Standardized descriptive coordinate combining distance, size and age |
+| `xy`, `centroid_xy` | First two PCA components for display |
+| `diagnostics` | Encoding and occupancy diagnostics |
 
-## Resource notes
+A basin label describes structural precedent in CrystalWeave. It is not an
+atomic-identity test or a probability of successful synthesis. The A-Lab
+outcome association is evaluated separately at the campaign level. Descriptive
+community labels reflect full membership and should not be read as certified
+prototype assignments for every member.
 
-No GPU is required. 2–4 CPU cores and 8–16 GB RAM are sufficient; the
-dominant cost is holding the frozen-map artifacts in memory rather than
-recomputing them per request.
+The displayed background subsample changes only the visualization. The full
+saved reference and all 32 components determine a query's score. For undated
+communities, the accessibility calculation retains its recorded 2010 fallback
+and reports that imputation explicitly.

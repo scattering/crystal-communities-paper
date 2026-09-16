@@ -1,0 +1,9 @@
+# Additional scientific analysis dependencies
+average-minimum-distance==1.6.1
+gemmi==0.7.5
+numba==0.65.0
+llvmlite==0.47.0
+pynndescent==0.6.0
+umap-learn==0.5.12
+ElMD==0.5.15
+setuptools==80.9.0

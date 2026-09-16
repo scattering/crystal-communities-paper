@@ -97,16 +97,21 @@ def build_weighted_graph(X: np.ndarray, k: int, mutual_knn: bool) -> nx.Graph:
     nbrs = NearestNeighbors(n_neighbors=k + 1, metric="euclidean", algorithm="auto")
     nbrs.fit(X)
     distances, indices = nbrs.kneighbors(X)
-    neighbor_sets = [set(row[1:]) for row in indices]
+    # With duplicate vectors, self need not be first (or even returned).
+    # Preserve sklearn's tie order while retaining k actual other rows.
+    retained = [np.flatnonzero(row != i)[:k] for i, row in enumerate(indices)]
+    indices = np.asarray([row[keep] for row, keep in zip(indices, retained)])
+    distances = np.asarray([row[keep] for row, keep in zip(distances, retained)])
+    neighbor_sets = [set(row) for row in indices]
 
-    positive = distances[:, 1:]
+    positive = distances
     sigma = float(np.median(positive[positive > 0])) if np.any(positive > 0) else 1.0
     sigma = max(sigma, 1e-8)
 
     graph = nx.Graph()
     graph.add_nodes_from(range(len(X)))
     for i in range(len(X)):
-        for j, dist in zip(indices[i, 1:], distances[i, 1:]):
+        for j, dist in zip(indices[i], distances[i]):
             j = int(j)
             if mutual_knn and i not in neighbor_sets[j]:
                 continue
